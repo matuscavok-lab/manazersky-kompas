@@ -17,6 +17,18 @@
   function = "license-db"
   path = "/databaza-klucov.json"
 
+[[edge_functions]]
+  function = "users-db"
+  path = "/api/users-db"
+
+[[edge_functions]]
+  function = "users-db"
+  path = "/databaza-uzivatelov.js"
+
+[[edge_functions]]
+  function = "users-db"
+  path = "/databaza-uzivatelov.json"
+
 [[headers]]
   for = "/"
   [headers.values]
@@ -39,6 +51,16 @@
 
 [[headers]]
   for = "/databaza-klucov.json"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/databaza-uzivatelov.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/databaza-uzivatelov.json"
   [headers.values]
     Cache-Control = "no-cache, no-store, must-revalidate"
 

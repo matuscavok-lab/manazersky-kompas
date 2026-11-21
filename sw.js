@@ -1,7 +1,7 @@
 // ============================================================================
 // Manažérsky Kompas v0.9 – Service Worker (Krok V09-5: Cache-First Zero-CDN Offline PWA)
 // ============================================================================
-const CACHE_VERSION = 'v0.9-build-1795284474';
+const CACHE_VERSION = 'v0.9-build-1795303454';
 const CACHE_NAME = `manazersky-kompas-${CACHE_VERSION}-cache`;
 
 // Hlavné súbory aplikácie (Zero-CDN bundle obsahuje HTML, štýly, skripty a SVG ikony)
@@ -110,6 +110,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Netlify Cloud API, Edge Functions a súbory databázy kľúčov idú VŽDY priamo na sieť bez cache
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.includes('/api/') ||
+    url.pathname.startsWith('/.netlify/') ||
+    /(^|\/)databaza-klucov\.(js|json)$/i.test(url.pathname)
+  ) {
+    return;
+  }
+
   // Inštalačné balíky (.exe, .apk) a priečinok /downloads/ sťahujeme priamo zo siete
   if (/\/downloads\/|\.(exe|apk|msi|zip)$/i.test(url.pathname)) {
     return;
@@ -130,14 +140,25 @@ self.addEventListener('fetch', (event) => {
           const networkResponse = await fetch(req);
           if (networkResponse && networkResponse.status === 200) {
             cache.put(req, networkResponse.clone()).catch(() => {});
-            cache.put('./index.html', networkResponse.clone()).catch(() => {});
+            if (
+              url.pathname === '/' ||
+              url.pathname === '/index.html' ||
+              url.pathname.endsWith('/index.html')
+            ) {
+              cache.put('./index.html', networkResponse.clone()).catch(() => {});
+            }
           }
           return networkResponse;
         } catch (err) {
-          const cachedHtml =
-            (await cache.match(req, { ignoreSearch: true })) ||
-            (await cache.match('./index.html', { ignoreSearch: true })) ||
-            (await cache.match('./', { ignoreSearch: true }));
+          const isKeygenRoute = /\/(generator-klucov(\.html)?|keygen|generator)\/?$/i.test(
+            url.pathname
+          );
+          const cachedHtml = isKeygenRoute
+            ? (await cache.match(req, { ignoreSearch: true })) ||
+              (await cache.match('./generator-klucov.html', { ignoreSearch: true }))
+            : (await cache.match(req, { ignoreSearch: true })) ||
+              (await cache.match('./index.html', { ignoreSearch: true })) ||
+              (await cache.match('./', { ignoreSearch: true }));
           if (cachedHtml) return cachedHtml;
           return new Response('Offline – aplikácia ešte nie je uložená v lokálnej cache.', {
             status: 503,
