@@ -6,6 +6,7 @@
   <title>Manažérsky Kompas — Keygen Studio &amp; Databáza kľúčov</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%234338ca'/%3E%3Cstop offset='100%25' stop-color='%231e1b4b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='112' fill='url(%23g)'/%3E%3Ccircle cx='256' cy='256' r='176' fill='none' stroke='white' stroke-width='24' opacity='0.85'/%3E%3Cpolygon points='344,168 292,292 168,344 220,220' fill='white'/%3E%3Cpolygon points='344,168 256,256 220,220' fill='%23818cf8'/%3E%3Ccircle cx='256' cy='256' r='18' fill='%231e1b4b'/%3E%3C/svg%3E" />
   <script src="databaza-klucov.js" onerror="window.__KOMPAS_DB_EXTERNAL_MISSING__=true"></script>
+  <script src="databaza-uzivatelov.js" onerror="window.__KOMPAS_USERS_DB_EXTERNAL_MISSING__=true"></script>
   <style>
     :root {
       --bg-page: #f1f5f9;
@@ -1429,6 +1430,11 @@
             Databáza kľúčov
             <span class="tab-count" id="db-count-badge">0</span>
           </button>
+          <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="users" id="tab-btn-users">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Registrovaní používatelia
+            <span class="tab-count" id="users-count-badge">0</span>
+          </button>
         </div>
         <div class="nav-spec">Formát: KOMPAS-&lt;PROG&gt;-&lt;EXP&gt;-&lt;NONCE&gt;-&lt;SIG&gt; (SHA-256)</div>
       </div>
@@ -1763,6 +1769,57 @@
         </div>
       </div>
     </section>
+
+    <!-- TAB 4: REGISTERED USERS DATABASE -->
+    <section class="view-panel" id="panel-users" aria-labelledby="tab-btn-users">
+      <div class="db-stats-grid" id="users-stats-grid">
+        <div class="db-stat-card"><div class="db-stat-label">Celkom účtov</div><div class="db-stat-value" id="users-stat-total">0</div></div>
+        <div class="db-stat-card"><div class="db-stat-label">Registrovaní používatelia</div><div class="db-stat-value" style="color: var(--indigo-600);" id="users-stat-registered">0</div></div>
+        <div class="db-stat-card"><div class="db-stat-label">Free</div><div class="db-stat-value" style="color: var(--emerald-600);" id="users-stat-free">0</div></div>
+        <div class="db-stat-card"><div class="db-stat-label">EDU Pro</div><div class="db-stat-value" style="color: var(--indigo-600);" id="users-stat-edu">0</div></div>
+        <div class="db-stat-card"><div class="db-stat-label">Enterprise Pro</div><div class="db-stat-value" style="color: var(--amber-600);" id="users-stat-ent">0</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div>
+              <h2 class="card-title">Databáza registrovaných používateľov (<code>databaza-uzivatelov.js</code> / <code>.json</code>)</h2>
+              <p class="card-subtitle">Iba registrovaní používatelia v tejto databáze môžu prejsť na režim Pro a aktivovať licenčné kľúče</p>
+            </div>
+          </div>
+
+          <div class="output-toolbar">
+            <button type="button" class="btn btn-indigo-solid btn-sm" id="users-cloud-sync-btn">&#9729;&#65039; Synchronizovať s Netlify</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="users-export-js-btn">Export databaza-uzivatelov.js</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="users-export-json-btn">Export databaza-uzivatelov.json</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="users-export-csv-btn">Export .CSV</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="users-import-btn">Import (.js / .json)</button>
+            <input type="file" id="users-import-file-input" accept=".js,.json,application/javascript,application/json" style="display: none;" />
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="history-controls">
+            <div class="filter-group">
+              <input type="search" id="users-search" class="input search-input" placeholder="Hľadať meno, e-mail, organizáciu, licenčný kľúč..." />
+              <select id="users-filter-tier" class="input select-input" aria-label="Filtrovať používateľov podľa balíka">
+                <option value="ALL">Balík: Všetky</option>
+                <option value="free">Free</option>
+                <option value="edu_pro">EDU Pro</option>
+                <option value="enterprise_pro">Enterprise Pro</option>
+              </select>
+            </div>
+            <div class="hint-text" id="users-showing-label">Zobrazených: 0 z 0</div>
+          </div>
+
+          <div id="users-table-container"></div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- Modal: Printable Voucher -->
@@ -2056,6 +2113,8 @@
       // 2. CONSTANTS, PROGRAMS & SHARED DATABASE SCHEMA
       // =========================================================================
       const STORAGE_LICENSE_DB_KEY = 'manazersky_kompas_license_db_v1';
+      const STORAGE_USERS_DB_KEY = 'manazersky_kompas_users_db_v1';
+      const STORAGE_LEGACY_USERS_KEY = 'manazersky_kompas_auth_users_v1';
       const STORAGE_NETLIFY_URL_KEY = 'manazersky_kompas_netlify_url_v1';
       const HISTORY_STORAGE_KEY = 'manazersky_kompas_keygen_history_v1';
       const SEED_BASELINE_ISO = '2026-01-01T00:00:00.000Z';
@@ -4868,6 +4927,432 @@
         });
         document.addEventListener('keydown', (e) => {
           if (e.key === 'Escape') closeAllModals();
+        });
+
+        initUsersDatabasePanel();
+      }
+
+      // =========================================================================
+      // 9. REGISTERED USERS DATABASE ENGINE & PANEL
+      // =========================================================================
+      const DEFAULT_USERS_SEED_LIST = [
+        {
+          id: 'demo_student_free',
+          fullName: 'Bc. Adam Kováč',
+          email: 'student@kompas.sk',
+          passwordHash: 'ba9f2792b52889f2f8407d965767e7231a25bd7dc27adef19be042eccbf472ed',
+          hashAlg: 'sha256-offline-v1',
+          accountType: 'student',
+          accountTypeLabel: '🎓 Študent VŠ',
+          organization: 'Ekonomická univerzita v Bratislave',
+          tier: 'free',
+          licenseKey: '',
+          licenseExpiresAt: null,
+          licenseProgram: '',
+          licenseActivatedAt: null,
+          isDemo: true,
+          createdAt: '2026-01-15T09:00:00.000Z',
+          lastLoginAt: null,
+          updatedAt: '2026-01-15T09:00:00.000Z',
+        },
+        {
+          id: 'demo_edu_pro',
+          fullName: 'Ing. Lucia Horváthová',
+          email: 'edu@kompas.sk',
+          passwordHash: '7204a11f81b3924da4c35d19ebb7f2920b62111a680804512f90e71ac327ee70',
+          hashAlg: 'sha256-offline-v1',
+          accountType: 'student',
+          accountTypeLabel: '🎓 Študent VŠ',
+          organization: 'STU Bratislava – MTF',
+          tier: 'edu_pro',
+          licenseKey: 'EDU-UNIV-2026',
+          licenseExpiresAt: null,
+          licenseProgram: 'EDU Pro',
+          licenseActivatedAt: '2026-01-15T09:00:00.000Z',
+          isDemo: true,
+          createdAt: '2026-01-15T09:00:00.000Z',
+          lastLoginAt: null,
+          updatedAt: '2026-01-15T09:00:00.000Z',
+        },
+        {
+          id: 'demo_enterprise_pro',
+          fullName: 'Mgr. Marek Novák',
+          email: 'firma@kompas.sk',
+          passwordHash: '67b623260e5e8d25fce3f644caa92e8859de3c5f75b78fd11a3aa54dd05a59b2',
+          hashAlg: 'sha256-offline-v1',
+          accountType: 'manager',
+          accountTypeLabel: '💼 Manažér',
+          organization: 'Kompas Advisory s.r.o.',
+          tier: 'enterprise_pro',
+          licenseKey: 'ENT-PRO-2026',
+          licenseExpiresAt: null,
+          licenseProgram: 'Enterprise Pro',
+          licenseActivatedAt: '2026-01-15T09:00:00.000Z',
+          isDemo: true,
+          createdAt: '2026-01-15T09:00:00.000Z',
+          lastLoginAt: null,
+          updatedAt: '2026-01-15T09:00:00.000Z',
+        },
+      ];
+
+      let usersDbState = {
+        schemaVersion: '1.0',
+        updatedAt: '2026-01-15T09:00:00.000Z',
+        deletedEmails: [],
+        deletedAtMap: {},
+        users: cloneObj(DEFAULT_USERS_SEED_LIST),
+      };
+
+      function normalizeUsersDbRecordKeygen(raw, fallbackIso) {
+        if (!raw || typeof raw !== 'object' || !raw.email) return null;
+        const email = String(raw.email || '').trim().toLowerCase();
+        if (!email) return null;
+        const tier = ['free', 'edu_pro', 'enterprise_pro'].includes(String(raw.tier || '').toLowerCase())
+          ? String(raw.tier).toLowerCase()
+          : 'free';
+        const accountType = ['student', 'manager', 'teacher'].includes(String(raw.accountType || '').toLowerCase())
+          ? String(raw.accountType).toLowerCase()
+          : 'student';
+        return {
+          id: String(raw.id || ('usr_' + email.replace(/[^a-z0-9]/g, '_'))),
+          fullName: String(raw.fullName || email.split('@')[0]),
+          email,
+          passwordHash: String(raw.passwordHash || ''),
+          hashAlg: String(raw.hashAlg || 'sha256-offline-v1'),
+          accountType,
+          accountTypeLabel: String(raw.accountTypeLabel || (accountType === 'manager' ? '💼 Manažér' : accountType === 'teacher' ? '🏫 Pedagóg' : '🎓 Študent VŠ')),
+          organization: String(raw.organization || ''),
+          tier,
+          licenseKey: String(raw.licenseKey || '').trim().toUpperCase(),
+          licenseExpiresAt: raw.licenseExpiresAt || null,
+          licenseProgram: String(raw.licenseProgram || ''),
+          licenseActivatedAt: raw.licenseActivatedAt || null,
+          isDemo: Boolean(raw.isDemo),
+          createdAt: String(raw.createdAt || fallbackIso || '2026-01-15T09:00:00.000Z'),
+          lastLoginAt: raw.lastLoginAt || null,
+          updatedAt: String(raw.updatedAt || raw.lastLoginAt || raw.createdAt || fallbackIso || '2026-01-15T09:00:00.000Z'),
+        };
+      }
+
+      function mergeUsersDatabasesKeygen(baseObj, incObj) {
+        const deletedAtMap = {};
+        const collectDel = (src) => {
+          if (!src || typeof src !== 'object') return;
+          if (src.deletedAtMap && typeof src.deletedAtMap === 'object') {
+            Object.keys(src.deletedAtMap).forEach((k) => {
+              const em = String(k || '').trim().toLowerCase();
+              if (!em) return;
+              const iso = src.deletedAtMap[k] || src.updatedAt;
+              if (!deletedAtMap[em] || parseIsoTs(iso) >= parseIsoTs(deletedAtMap[em])) {
+                deletedAtMap[em] = iso;
+              }
+            });
+          }
+          if (Array.isArray(src.deletedEmails)) {
+            src.deletedEmails.forEach((k) => {
+              const em = String(k || '').trim().toLowerCase();
+              if (em && !deletedAtMap[em]) deletedAtMap[em] = src.updatedAt || '2026-01-15T09:00:00.000Z';
+            });
+          }
+        };
+        collectDel(baseObj);
+        collectDel(incObj);
+
+        const usersMap = new Map();
+        const addUsers = (src) => {
+          if (!src || !Array.isArray(src.users)) return;
+          src.users.forEach((raw) => {
+            const norm = normalizeUsersDbRecordKeygen(raw, src.updatedAt);
+            if (!norm) return;
+            const prev = usersMap.get(norm.email);
+            const normMs = Math.max(parseIsoTs(norm.updatedAt), parseIsoTs(norm.lastLoginAt), parseIsoTs(norm.createdAt));
+            const prevMs = prev ? Math.max(parseIsoTs(prev.updatedAt), parseIsoTs(prev.lastLoginAt), parseIsoTs(prev.createdAt)) : 0;
+            if (!prev || normMs >= prevMs) {
+              usersMap.set(norm.email, {
+                ...(prev || {}),
+                ...norm,
+                passwordHash: norm.passwordHash || (prev && prev.passwordHash) || '',
+              });
+            }
+          });
+        };
+        addUsers(baseObj);
+        addUsers(incObj);
+
+        usersMap.forEach((rec, em) => {
+          const delIso = deletedAtMap[em];
+          const recMs = Math.max(parseIsoTs(rec.updatedAt), parseIsoTs(rec.lastLoginAt), parseIsoTs(rec.createdAt));
+          if (delIso && parseIsoTs(delIso) >= recMs) {
+            usersMap.delete(em);
+          } else if (delIso) {
+            delete deletedAtMap[em];
+          }
+        });
+
+        let newest = (baseObj && baseObj.updatedAt) || '2026-01-15T09:00:00.000Z';
+        if (incObj && parseIsoTs(incObj.updatedAt) > parseIsoTs(newest)) newest = incObj.updatedAt;
+        return {
+          schemaVersion: '1.0',
+          updatedAt: newest,
+          deletedEmails: Object.keys(deletedAtMap).sort(),
+          deletedAtMap,
+          users: Array.from(usersMap.values()).sort((a, b) => parseIsoTs(b.createdAt) - parseIsoTs(a.createdAt)),
+        };
+      }
+
+      function loadMergedUsersDbKeygen() {
+        let merged = {
+          schemaVersion: '1.0',
+          updatedAt: '2026-01-15T09:00:00.000Z',
+          deletedEmails: [],
+          deletedAtMap: {},
+          users: cloneObj(DEFAULT_USERS_SEED_LIST),
+        };
+        if (window.__KOMPAS_USERS_DB__ && Array.isArray(window.__KOMPAS_USERS_DB__.users)) {
+          merged = mergeUsersDatabasesKeygen(merged, window.__KOMPAS_USERS_DB__);
+        }
+        try {
+          const rawDb = window.localStorage.getItem(STORAGE_USERS_DB_KEY);
+          if (rawDb) {
+            const parsedDb = JSON.parse(rawDb);
+            if (parsedDb && Array.isArray(parsedDb.users)) {
+              merged = mergeUsersDatabasesKeygen(merged, parsedDb);
+            }
+          }
+          const rawArr = window.localStorage.getItem(STORAGE_LEGACY_USERS_KEY);
+          if (rawArr) {
+            const parsedArr = JSON.parse(rawArr);
+            if (Array.isArray(parsedArr)) {
+              merged = mergeUsersDatabasesKeygen(merged, { users: parsedArr, updatedAt: new Date().toISOString() });
+            }
+          }
+        } catch (e) {}
+        return merged;
+      }
+
+      function saveUsersDbKeygen(dbObj) {
+        usersDbState = mergeUsersDatabasesKeygen({ users: [] }, dbObj);
+        window.__KOMPAS_USERS_DB__ = cloneObj(usersDbState);
+        try {
+          window.localStorage.setItem(STORAGE_USERS_DB_KEY, JSON.stringify(usersDbState));
+          window.localStorage.setItem(STORAGE_LEGACY_USERS_KEY, JSON.stringify(usersDbState.users));
+        } catch (e) {}
+      }
+
+      function renderUsersDatabaseView() {
+        const users = usersDbState.users || [];
+        let regCount = 0;
+        let freeCount = 0;
+        let eduCount = 0;
+        let entCount = 0;
+        users.forEach((u) => {
+          if (!u.isDemo) regCount += 1;
+          if (u.tier === 'enterprise_pro') entCount += 1;
+          else if (u.tier === 'edu_pro') eduCount += 1;
+          else freeCount += 1;
+        });
+
+        const badgeEl = document.getElementById('users-count-badge');
+        if (badgeEl) badgeEl.textContent = String(users.length);
+        const totEl = document.getElementById('users-stat-total');
+        if (totEl) totEl.textContent = String(users.length);
+        const regEl = document.getElementById('users-stat-registered');
+        if (regEl) regEl.textContent = String(regCount);
+        const freeEl = document.getElementById('users-stat-free');
+        if (freeEl) freeEl.textContent = String(freeCount);
+        const eduEl = document.getElementById('users-stat-edu');
+        if (eduEl) eduEl.textContent = String(eduCount);
+        const entEl = document.getElementById('users-stat-ent');
+        if (entEl) entEl.textContent = String(entCount);
+
+        const q = (document.getElementById('users-search')?.value || '').trim().toLowerCase();
+        const tierFilter = document.getElementById('users-filter-tier')?.value || 'ALL';
+        const filtered = users.filter((u) => {
+          if (tierFilter !== 'ALL' && u.tier !== tierFilter) return false;
+          if (!q) return true;
+          return (
+            String(u.fullName || '').toLowerCase().includes(q) ||
+            String(u.email || '').toLowerCase().includes(q) ||
+            String(u.organization || '').toLowerCase().includes(q) ||
+            String(u.licenseKey || '').toLowerCase().includes(q)
+          );
+        });
+
+        const showEl = document.getElementById('users-showing-label');
+        if (showEl) showEl.textContent = 'Zobrazených: ' + filtered.length + ' z ' + users.length;
+
+        const container = document.getElementById('users-table-container');
+        if (!container) return;
+
+        if (filtered.length === 0) {
+          container.innerHTML = '<div class="empty-state" style="padding: 36px 16px;"><h3>Žiadni zodpovedajúci používatelia</h3><p>Zmeňte filter alebo synchronizujte databázu s Netlify Cloud (/api/users-db).</p></div>';
+          return;
+        }
+
+        const tierLabelMap = {
+          free: '<span class="prog-badge prog-badge-FREE">Free</span>',
+          edu_pro: '<span class="prog-badge prog-badge-EDU">EDU Pro</span>',
+          enterprise_pro: '<span class="prog-badge prog-badge-PRO">Enterprise Pro</span>',
+        };
+
+        const rowsHtml = filtered.map((u) => {
+          const safeName = escapeHtml(u.fullName);
+          const safeEmail = escapeHtml(u.email);
+          const safeOrg = escapeHtml(u.organization || '—');
+          const safeType = escapeHtml(u.accountTypeLabel || u.accountType || '');
+          const safeKey = u.licenseKey ? '<code>' + escapeHtml(u.licenseKey) + '</code>' : '<span class="hint-text">—</span>';
+          const regDate = u.createdAt ? escapeHtml(formatSlovakDateTime(u.createdAt)) : '—';
+          const demoTag = u.isDemo ? ' <span class="hint-text">(Demo)</span>' : '';
+          const delBtn = !u.isDemo
+            ? '<button type="button" class="btn btn-danger btn-xs" data-user-delete="' + safeEmail + '">Zmazať</button>'
+            : '<span class="hint-text">Chránený</span>';
+
+          return '<tr>' +
+            '<td><strong>' + safeName + '</strong>' + demoTag + '<br/><span class="hint-text">' + safeType + '</span></td>' +
+            '<td><code>' + safeEmail + '</code></td>' +
+            '<td>' + safeOrg + '</td>' +
+            '<td>' + (tierLabelMap[u.tier] || tierLabelMap.free) + '</td>' +
+            '<td>' + safeKey + '</td>' +
+            '<td>' + regDate + '</td>' +
+            '<td style="text-align:right;">' + delBtn + '</td>' +
+            '</tr>';
+        }).join('');
+
+        container.innerHTML =
+          '<div class="db-table-wrap"><table class="db-table"><thead><tr>' +
+          '<th>Meno</th><th>E-mail</th><th>Organizácia / Univerzita</th><th>Balík</th><th>Licenčný kľúč</th><th>Registrácia</th><th style="text-align:right;">Akcia</th>' +
+          '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>';
+      }
+
+      async function syncUsersDbWithCloudKeygen(showFeedback = false) {
+        const apiBase = getNetlifyApiBaseUrl();
+        if (!apiBase) {
+          if (showFeedback) {
+            showToast('Zadajte URL vašej Netlify stránky v poli Prepojenie na Netlify Cloud.', 'info');
+          }
+          return;
+        }
+        try {
+          const resp = await fetch(apiBase + '/api/users-db?t=' + Date.now(), { cache: 'no-store' });
+          const data = await resp.json().catch(() => ({}));
+          const cloudRaw = data && data.db && Array.isArray(data.db.users) ? data.db : Array.isArray(data.users) ? data : null;
+          if (resp.ok && cloudRaw) {
+            const merged = mergeUsersDatabasesKeygen(usersDbState, cloudRaw);
+            saveUsersDbKeygen(merged);
+            renderUsersDatabaseView();
+            if (merged.users.length !== cloudRaw.users.length || parseIsoTs(merged.updatedAt) > parseIsoTs(cloudRaw.updatedAt)) {
+              await fetch(apiBase + '/api/users-db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ db: usersDbState }),
+                cache: 'no-store',
+              }).catch(() => null);
+            }
+            if (showFeedback) {
+              showToast('Databáza používateľov synchronizovaná s Netlify Cloud (' + usersDbState.users.length + ' účtov).');
+            }
+          }
+        } catch (err) {
+          if (showFeedback) {
+            showToast('Nepodarilo sa pripojiť na /api/users-db.', 'error');
+          }
+        }
+      }
+
+      function initUsersDatabasePanel() {
+        saveUsersDbKeygen(loadMergedUsersDbKeygen());
+        renderUsersDatabaseView();
+        syncUsersDbWithCloudKeygen(false);
+
+        window.addEventListener('storage', (e) => {
+          if (e.key === STORAGE_USERS_DB_KEY || e.key === STORAGE_LEGACY_USERS_KEY) {
+            saveUsersDbKeygen(loadMergedUsersDbKeygen());
+            renderUsersDatabaseView();
+          }
+        });
+
+        document.getElementById('users-search')?.addEventListener('input', renderUsersDatabaseView);
+        document.getElementById('users-filter-tier')?.addEventListener('change', renderUsersDatabaseView);
+        document.getElementById('users-cloud-sync-btn')?.addEventListener('click', () => syncUsersDbWithCloudKeygen(true));
+
+        document.getElementById('users-export-json-btn')?.addEventListener('click', () => {
+          const blob = new Blob([JSON.stringify(usersDbState, null, 2)], { type: 'application/json;charset=utf-8;' });
+          if (saveBlobFile(blob, 'databaza-uzivatelov.json')) {
+            showToast('Súbor databaza-uzivatelov.json exportovaný (' + usersDbState.users.length + ' účtov).');
+          }
+        });
+
+        document.getElementById('users-export-js-btn')?.addEventListener('click', () => {
+          const jsText = '/* Manažérsky Kompas — Databáza registrovaných používateľov */\nwindow.__KOMPAS_USERS_DB__ = ' + JSON.stringify(usersDbState, null, 2) + ';\n';
+          const blob = new Blob([jsText], { type: 'application/javascript;charset=utf-8;' });
+          if (saveBlobFile(blob, 'databaza-uzivatelov.js')) {
+            showToast('Súbor databaza-uzivatelov.js exportovaný (' + usersDbState.users.length + ' účtov).');
+          }
+        });
+
+        document.getElementById('users-export-csv-btn')?.addEventListener('click', () => {
+          const header = ['ID', 'Meno', 'E-mail', 'Typ účtu', 'Organizácia', 'Balík', 'Licenčný kľúč', 'Registrácia'];
+          const escCsv = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+          const lines = [header.map(escCsv).join(';')];
+          (usersDbState.users || []).forEach((u) => {
+            lines.push([u.id, u.fullName, u.email, u.accountTypeLabel || u.accountType, u.organization, u.tier, u.licenseKey || '', u.createdAt || ''].map(escCsv).join(';'));
+          });
+          const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+          if (saveBlobFile(blob, 'databaza-uzivatelov.csv')) {
+            showToast('Súbor databaza-uzivatelov.csv exportovaný.');
+          }
+        });
+
+        const importInp = document.getElementById('users-import-file-input');
+        document.getElementById('users-import-btn')?.addEventListener('click', () => importInp && importInp.click());
+        importInp?.addEventListener('change', (e) => {
+          const file = e.target.files && e.target.files[0];
+          e.target.value = '';
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            try {
+              const raw = String(reader.result || '').replace(/^\uFEFF/, '').trim();
+              let parsed = null;
+              if (raw.startsWith('{')) parsed = JSON.parse(raw);
+              else {
+                const sb = raw.indexOf('{');
+                const eb = raw.lastIndexOf('}');
+                if (sb !== -1 && eb > sb) parsed = JSON.parse(raw.slice(sb, eb + 1));
+              }
+              if (!parsed || !Array.isArray(parsed.users)) throw new Error('Neplatný formát');
+              saveUsersDbKeygen(mergeUsersDatabasesKeygen(usersDbState, parsed));
+              renderUsersDatabaseView();
+              showToast('Databáza používateľov načítaná (' + usersDbState.users.length + ' účtov).');
+            } catch (err) {
+              showToast('Nepodarilo sa načítať databázu používateľov.', 'error');
+            }
+          };
+          reader.readAsText(file, 'utf-8');
+        });
+
+        document.getElementById('users-table-container')?.addEventListener('click', async (e) => {
+          const btn = e.target.closest('button[data-user-delete]');
+          if (!btn) return;
+          const targetEmail = String(btn.getAttribute('data-user-delete') || '').toLowerCase();
+          if (!targetEmail) return;
+          const nowIso = new Date().toISOString();
+          usersDbState.deletedAtMap[targetEmail] = nowIso;
+          usersDbState.deletedEmails = Object.keys(usersDbState.deletedAtMap).sort();
+          usersDbState.users = usersDbState.users.filter((u) => u.email !== targetEmail || u.isDemo);
+          usersDbState.updatedAt = nowIso;
+          saveUsersDbKeygen(usersDbState);
+          renderUsersDatabaseView();
+          const apiBase = getNetlifyApiBaseUrl();
+          if (apiBase) {
+            fetch(apiBase + '/api/users-db', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'delete', email: targetEmail }),
+              cache: 'no-store',
+            }).catch(() => null);
+          }
+          showToast('Používateľ ' + targetEmail + ' odstránený z databázy.');
         });
       }
 

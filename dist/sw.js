@@ -1,7 +1,7 @@
 // ============================================================================
 // Manažérsky Kompas v0.9 – Service Worker (Krok V09-5: Cache-First Zero-CDN Offline PWA)
 // ============================================================================
-const CACHE_VERSION = 'v0.9-build-1795300943';
+const CACHE_VERSION = 'v0.9-build-1795303454';
 const CACHE_NAME = `manazersky-kompas-${CACHE_VERSION}-cache`;
 
 // Hlavné súbory aplikácie (Zero-CDN bundle obsahuje HTML, štýly, skripty a SVG ikony)
