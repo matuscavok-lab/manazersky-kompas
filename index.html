@@ -561,7 +561,7 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
         schemaVersion: '1.0',
         appVersion: '0.9',
         source: "src/data/releaseGate.js",
-        generatedAt: "2026-11-21T23:24:14.4219127+00:00",
+        generatedAt: "2026-11-21T23:46:37.2327872+00:00",
         approvedFeatureIds: ["release-v09-auth-and-access-core"],
         stagedFeatureIds: ["exp-ai-scenario-simulator","update-v09-batch-report","exp-quick-kpi-benchmarker"],
         rollbackFeatureIds: []
@@ -59512,11 +59512,11 @@ function HeaderStepper({
     title: "Firemný profil pre manažérov a audítorov: kompaktné tabuľkové popisy, zameranie na KPI, rýchly audit a manažérsky reporting"
   }, /*#__PURE__*/React.createElement(Briefcase, {
     className: `w-3.5 h-3.5 shrink-0 ${appProfile === 'enterprise' ? 'text-amber-400' : 'text-slate-700'}`
-  }), /*#__PURE__*/React.createElement("span", null, "💼 Manažér & Firma"))), (normalizedTier === 'lite' || normalizedTier === 'free') && onOpenPricingModal && /*#__PURE__*/React.createElement("button", {
+  }), /*#__PURE__*/React.createElement("span", null, "💼 Manažér & Firma"))), Boolean(currentUser) && normalizedTier === 'free' && onOpenPricingModal && /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: () => onOpenPricingModal(),
     className: `h-9 sm:h-10 inline-flex items-center gap-1.5 px-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer box-border shrink-0 shadow-xs ${appProfile === 'enterprise' ? 'bg-amber-400/15 hover:bg-amber-400/25 text-amber-900 border border-amber-400/70' : 'bg-gradient-to-r from-amber-50 via-amber-100/90 to-orange-50 hover:from-amber-100 hover:to-orange-100 text-amber-950 border border-amber-300/80'}`,
-    title: !currentUser ? 'Porovnať balíky Pro (aktivácia Pro režimu vyžaduje bezplatnú registráciu alebo prihlásenie)' : 'Porovnať balíky EDU Pro a Enterprise Pro alebo zadať licenčný kľúč'
+    title: "Porovnať balíky EDU Pro a Enterprise Pro alebo zadať licenčný kľúč"
   }, /*#__PURE__*/React.createElement("span", null, "⚡ Prejsť na Pro")), !currentUser ? /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: () => onOpenAuthModal && onOpenAuthModal('register'),
@@ -60767,7 +60767,7 @@ function AuthModalPanel({
     className: "text-[11px] text-emerald-800/90"
   }, "Po registrácii sa automaticky prepnete z ", /*#__PURE__*/React.createElement("strong", null, "Lite"), " na", ' ', /*#__PURE__*/React.createElement("strong", null, freeTierMeta.badgeLabel), " (", freeUnlockedCount, " metód, ", freeMaxProjects, " projekty, čistý PNG/PDF export a STN ISO 690 citátor).", pendingUpgradeInfo?.methodName && pendingUpgradeInfo?.requiredTier === 'free' && /*#__PURE__*/React.createElement(React.Fragment, null, " Odomknutá metóda ", /*#__PURE__*/React.createElement("strong", null, pendingUpgradeInfo.methodName), " sa vám hneď otvorí.")), pendingUpgradeInfo && (pendingUpgradeInfo.requiredTier === 'edu_pro' || pendingUpgradeInfo.requiredTier === 'enterprise_pro') && /*#__PURE__*/React.createElement("div", {
     className: "pt-1 text-[11px] text-indigo-900 bg-indigo-50/90 border border-indigo-200 rounded-xl px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2"
-  }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, pendingUpgradeInfo.methodName || pendingUpgradeInfo.title), " vyžaduje balík", ' ', /*#__PURE__*/React.createElement("strong", null, pendingUpgradeInfo.requiredLabel), "."), onOpenPricingModal && /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, pendingUpgradeInfo.methodName || pendingUpgradeInfo.title), " vyžaduje balík", ' ', /*#__PURE__*/React.createElement("strong", null, pendingUpgradeInfo.requiredLabel), ". Po vytvorení bezplatného účtu si ho budete môcť odomknúť."), Boolean(currentUser) && onOpenPricingModal && /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: () => onOpenPricingModal(pendingUpgradeInfo.requiredTier),
     className: "font-extrabold text-indigo-700 hover:text-indigo-900 underline cursor-pointer shrink-0"
@@ -60879,7 +60879,7 @@ function AuthModalPanel({
     className: "w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs sm:text-sm font-extrabold shadow-md shadow-emerald-600/20 inline-flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60"
   }, /*#__PURE__*/React.createElement(UserPlus, {
     className: "w-4 h-4"
-  }), /*#__PURE__*/React.createElement("span", null, isSubmitting ? 'Vytváram účet...' : `Vytvoriť účet zadarmo a odomknúť ${freeUnlockedCount} metód`)), onOpenPricingModal && /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("span", null, isSubmitting ? 'Vytváram účet...' : `Vytvoriť účet zadarmo a odomknúť ${freeUnlockedCount} metód`)), Boolean(currentUser) && onOpenPricingModal && /*#__PURE__*/React.createElement("div", {
     className: "text-center pt-1"
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
@@ -75424,6 +75424,13 @@ function App() {
     setIsPricingModalOpen(true);
   };
   const handleOpenPricingModal = (targetTier = null) => {
+    if (!currentUser && !isDevMode) {
+      setAuthModalState({
+        isOpen: true,
+        tab: 'register'
+      });
+      return;
+    }
     const resolved = targetTier || (effectiveAccessTier === 'edu_pro' ? 'enterprise_pro' : 'edu_pro');
     setPricingHighlightTier(resolved);
     setIsPricingModalOpen(true);
@@ -76208,7 +76215,7 @@ function App() {
       } catch (err) {}
     }
   }), /*#__PURE__*/React.createElement(PricingModal, {
-    isOpen: isPricingModalOpen,
+    isOpen: isPricingModalOpen && (Boolean(currentUser) || isDevMode),
     onClose: () => {
       setIsPricingModalOpen(false);
       setPendingUpgradeInfo(null);
