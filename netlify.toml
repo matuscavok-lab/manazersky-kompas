@@ -17,6 +17,10 @@
   function = "admin-api"
   path = "/api/admin/*"
 
+[[edge_functions]]
+  function = "payment-webhook"
+  path = "/api/payment-webhook"
+
 [[headers]]
   for = "/*"
   [headers.values]

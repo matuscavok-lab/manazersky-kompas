@@ -665,6 +665,60 @@ export default async function handler(request) {
       );
     }
 
+    if (pathname === "/api/auth/delete-account") {
+      if (method !== "POST") {
+        return jsonResponse({ ok: false, error: "Metóda nie je povolená." }, 405, corsHeaders);
+      }
+
+      if (currentUser.isDemo) {
+        return jsonResponse(
+          {
+            ok: true,
+            wasDemo: true,
+            deletedEmail: currentUser.email,
+            message:
+              "Relácia ukážkového demo účtu bola ukončená a lokálne dáta boli vymazané.",
+          },
+          200,
+          corsHeaders,
+        );
+      }
+
+      const targetEmail = normalizeEmail(currentUser.email);
+      const filteredUsers = (usersDb.users || []).filter(
+        (u) =>
+          normalizeEmail(u.email) !== targetEmail &&
+          (!currentUser.id || u.id !== currentUser.id),
+      );
+      const nextDeletedAtMap = {
+        ...(usersDb.deletedAtMap || {}),
+        [targetEmail]: nowIso,
+      };
+      const nextUsersDb = normalizeUsersDb(
+        {
+          ...usersDb,
+          updatedAt: nowIso,
+          deletedAtMap: nextDeletedAtMap,
+          deletedEmails: Object.keys(nextDeletedAtMap).sort(),
+          users: filteredUsers,
+        },
+        nowIso,
+      );
+      await usersStore.setJSON(USERS_BLOB_KEY, nextUsersDb);
+
+      return jsonResponse(
+        {
+          ok: true,
+          wasDemo: false,
+          deletedEmail: currentUser.email,
+          message:
+            "Váš používateľský účet a osobné údaje boli trvalo vymazané zo servera v súlade s čl. 17 GDPR.",
+        },
+        200,
+        corsHeaders,
+      );
+    }
+
     return jsonResponse({ ok: false, error: "Endpoint neexistuje." }, 404, corsHeaders);
   } catch (err) {
     return jsonResponse(
@@ -682,5 +736,6 @@ export const config = {
     "/api/auth/me",
     "/api/auth/tier",
     "/api/auth/logout",
+    "/api/auth/delete-account",
   ],
 };
