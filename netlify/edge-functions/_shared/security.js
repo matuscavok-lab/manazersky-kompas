@@ -996,7 +996,7 @@ export async function verifySingleLicenseKey(rawKey, licenseDb, hmacSecret = "")
       isExpired: false,
       daysRemaining: null,
       formattedExpiry: null,
-      error: "Tento licenčný kľúč sa nenachádza v databáze vydaných kľúčov alebo bol odstránený.",
+      error: "Tento licenčný kľúč nie je platný alebo nebol nájdený.",
     };
   }
 
@@ -1022,8 +1022,8 @@ export async function verifySingleLicenseKey(rawKey, licenseDb, hmacSecret = "")
       daysRemaining: null,
       formattedExpiry: effectiveExp === "PERM" ? "Trvalá licencia" : "",
       error: record.revokedReason
-        ? `Tento licenčný kľúč bol v databáze zablokovaný / zrušený administrátorom (${record.revokedReason}).`
-        : "Tento licenčný kľúč bol v databáze zablokovaný / zrušený administrátorom.",
+        ? `Tento licenčný kľúč bol zablokovaný alebo zrušený (${record.revokedReason}).`
+        : "Tento licenčný kľúč bol zablokovaný alebo zrušený.",
     };
   }
 
