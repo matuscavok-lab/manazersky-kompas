@@ -1,0 +1,18 @@
+# Lokálne admin nástroje a databázy — NIKDY nenahrávať do verejného repozitára
+generator-klucov.html
+GeneratorKlucov.exe
+databaza-klucov.js
+databaza-klucov.json
+databaza-uzivatelov.js
+databaza-uzivatelov.json
+
+# Environment variables a tajné kľúče
+.env
+.env.local
+.env.*.local
+
+# Dočasné build, deploy a debug súbory
+.netlify/
+node_modules/
+.cache/
+scratch/
