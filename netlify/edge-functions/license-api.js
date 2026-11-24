@@ -103,7 +103,7 @@ export default async function handler(request) {
           {
             ok: false,
             requiresAuth: true,
-            error: "Účet používateľa sa v databáze nenašiel. Prihláste sa prosím znova.",
+            error: "Účet používateľa sa nenašiel. Prihláste sa prosím znova.",
           },
           401,
           corsHeaders,

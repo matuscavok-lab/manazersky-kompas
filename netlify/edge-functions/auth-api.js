@@ -87,7 +87,7 @@ function buildLicenseStatusResponse(parsed, currentUser, checkedAt) {
       dbStatus: parsed.dbStatus || "not_found",
       error:
         parsed.error ||
-        "Licenčný kľúč bol zablokovaný alebo sa nenachádza v databáze vydaných kľúčov.",
+        "Licenčný kľúč bol zablokovaný alebo je neplatný.",
       licenseKey: "",
       tier: "free",
       programCode: parsed.programCode || "",
@@ -421,7 +421,7 @@ export default async function handler(request) {
           licenseRevoked = true;
           revokedKey = existingKey;
           revokedError =
-            parsed.error || "Licenčný kľúč bol v databáze zablokovaný alebo sa v nej nenachádza.";
+            parsed.error || "Licenčný kľúč bol zablokovaný alebo je neplatný.";
           updatedUser = {
             ...updatedUser,
             tier: "free",
@@ -509,7 +509,7 @@ export default async function handler(request) {
     );
     if (userIdx === -1) {
       return jsonResponse(
-        { ok: false, error: "Účet už v databáze neexistuje. Prihláste sa prosím znova." },
+        { ok: false, error: "Účet sa nenašiel. Prihláste sa prosím znova." },
         401,
         corsHeaders,
       );
