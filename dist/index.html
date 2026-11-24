@@ -561,7 +561,7 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
         schemaVersion: '1.0',
         appVersion: '0.9',
         source: "src/data/releaseGate.js",
-        generatedAt: "2026-11-21T23:46:37.2327872+00:00",
+        generatedAt: "2026-11-23T23:18:34.3888583+00:00",
         approvedFeatureIds: ["release-v09-auth-and-access-core"],
         stagedFeatureIds: ["exp-ai-scenario-simulator","update-v09-batch-report","exp-quick-kpi-benchmarker"],
         rollbackFeatureIds: []
@@ -684,10 +684,6 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
       });
     </script>
     
-    <!-- Externá databáza licenčných kľúčov a registrovaných používateľov -->
-    <script src="databaza-klucov.js" onerror="window.__KOMPAS_DB_EXTERNAL_MISSING__=true"></script>
-    <script src="databaza-uzivatelov.js" onerror="window.__KOMPAS_USERS_DB_EXTERNAL_MISSING__=true"></script>
-
     <!-- Hlavný skript aplikácie (vopred skompilovaný do natívneho JavaScriptu pre bleskové offline spustenie) -->
     <script>
       if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
@@ -11362,7 +11358,7 @@ function getEffectiveLicenseDatabase() {
   const localRaw = licenseDbReadLocalStorage();
   const windowRaw = licenseDbReadWindowGlobal();
 
-  // Keď odpovie Netlify Cloud DB (/api/license-db alebo cloudové /databaza-klucov.js), má absolútnu autoritu nad lokálnou cache prehliadača
+  // V lokálnom desktop / file:// režime má externá autoritatívna databáza prednosť pred cache prehliadača; online overenie prebieha cez /api/license/verify.
   if (licenseDbIsNetlifyCloudActive() && windowRaw) {
     return licenseDbNormalizeObj(windowRaw);
   }
@@ -11643,6 +11639,17 @@ function refreshExternalLicenseDatabaseFromDisk() {
       stats: getLicenseDatabaseStats()
     });
   }
+  const proto = window.location && window.location.protocol ? window.location.protocol : '';
+  if (proto === 'http:' || proto === 'https:') {
+    const localDb = getEffectiveLicenseDatabase();
+    return Promise.resolve({
+      ok: true,
+      skipped: true,
+      isCloud: false,
+      db: localDb,
+      stats: getLicenseDatabaseStats()
+    });
+  }
   if (licenseDbRefreshInFlight) {
     return licenseDbRefreshInFlight;
   }
@@ -11742,41 +11749,6 @@ function refreshExternalLicenseDatabaseFromDisk() {
         afterScriptAttempt();
       }
     };
-
-    // Na HTTP/HTTPS najprv skúsime Netlify Cloud DB Edge Function (/api/license-db)
-    if (isHttp && typeof fetch === 'function') {
-      licenseDbFetchJsonWithTimeout(`/api/license-db?t=${cacheBust}`, 3500).then(payload => {
-        const candidate = payload && typeof payload === 'object' && payload.db && typeof payload.db === 'object' && Array.isArray(payload.db.keys) ? payload.db : payload && typeof payload === 'object' && Array.isArray(payload.keys) ? payload : null;
-        if (candidate) {
-          const normalizedCloud = licenseDbNormalizeObj(candidate);
-          window.__KOMPAS_NETLIFY_CLOUD_ACTIVE__ = true;
-          window.__KOMPAS_DB_EXTERNAL_MISSING__ = false;
-          window.__KOMPAS_LICENSE_DB__ = normalizedCloud;
-          const savedCloud = saveLicenseDatabase(normalizedCloud);
-          const stats = getLicenseDatabaseStats();
-          finished = true;
-          licenseDbDispatchUpdatedEvent({
-            isCloud: true,
-            source: 'netlify-cloud',
-            stats
-          });
-          resolve({
-            ok: true,
-            loadedExternal: true,
-            isCloud: true,
-            storage: payload && payload.storage || 'netlify-blobs',
-            db: savedCloud,
-            stats,
-            refreshedAt: new Date().toISOString()
-          });
-          return;
-        }
-        runScriptAndJsonFallback();
-      }).catch(() => {
-        runScriptAndJsonFallback();
-      });
-      return;
-    }
     runScriptAndJsonFallback();
   });
   licenseDbRefreshInFlight = runRefresh().finally(() => {
@@ -11786,8 +11758,8 @@ function refreshExternalLicenseDatabaseFromDisk() {
 }
 
 // === SUBOR: src\data\userDatabase.js ===
-// Centrálna databáza registrovaných používateľov (Krok V09-7)
-// Synchronizovaná medzi lokálnym úložiskom (localStorage), externým súborom (databaza-uzivatelov.js/.json) a Netlify Cloud (/api/users-db).
+// Centrálna lokálna databáza používateľov pre offline desktop režim (.exe / .apk / file://)
+// V online webovom režime sa identita a profily ukladajú na serveri cez /api/auth/* a /api/admin/users.
 
 const STORAGE_USERS_DB_KEY = 'manazersky_kompas_users_db_v1';
 const STORAGE_LEGACY_USERS_LIST_KEY = 'manazersky_kompas_auth_users_v1';
@@ -12257,39 +12229,10 @@ function usersDbPostJsonWithTimeout(url, bodyObj, timeoutMs = 4000) {
   return reqPromise;
 }
 function pushUsersDatabaseToNetlifyCloud(dbObj = null) {
-  if (!usersDbIsHttpProtocol()) {
-    return Promise.resolve({
-      ok: false,
-      skipped: true
-    });
-  }
-  const targetDb = usersDbNormalizeObj(dbObj || getEffectiveUsersDatabase(), new Date().toISOString());
-  return usersDbPostJsonWithTimeout('/api/users-db', {
-    db: targetDb
-  }, 4500).then(data => {
-    if (data && data.ok && data.db && Array.isArray(data.db.users)) {
-      const mergedCloud = usersDbMergeDatabases(targetDb, data.db);
-      if (typeof window !== 'undefined') {
-        window.__KOMPAS_USERS_CLOUD_ACTIVE__ = true;
-      }
-      const saved = saveUsersDatabase(mergedCloud);
-      const stats = getUsersDatabaseStats();
-      usersDbDispatchUpdatedEvent({
-        isCloud: true,
-        source: 'netlify-cloud',
-        stats
-      });
-      return {
-        ok: true,
-        isCloud: true,
-        db: saved,
-        stats
-      };
-    }
-    return {
-      ok: false,
-      isCloud: false
-    };
+  // Verejná synchronizácia celej DB používateľov bola v prospech GDPR a /api/auth/* & /api/admin/users odstránená.
+  return Promise.resolve({
+    ok: false,
+    skipped: true
   });
 }
 function upsertUserRecordInDatabase(userRecord, {
@@ -12331,26 +12274,9 @@ function upsertUserRecordInDatabase(userRecord, {
     source: stats.source,
     stats
   });
-  if (syncCloud && usersDbIsHttpProtocol()) {
-    usersDbPostJsonWithTimeout('/api/users-db', {
-      action: 'upsert',
-      user: normUser
-    }, 4500).then(data => {
-      if (data && data.ok && data.db && Array.isArray(data.db.users)) {
-        if (typeof window !== 'undefined') {
-          window.__KOMPAS_USERS_CLOUD_ACTIVE__ = true;
-        }
-        const merged = usersDbMergeDatabases(getEffectiveUsersDatabase(), data.db);
-        saveUsersDatabase(merged);
-        const latestStats = getUsersDatabaseStats();
-        usersDbDispatchUpdatedEvent({
-          isCloud: true,
-          source: 'netlify-cloud',
-          stats: latestStats
-        });
-      }
-    });
-  }
+
+  // Cloud sync bez autentifikácie je odstránený; prihlasovanie a profil rieši /api/auth/*.
+
   return savedDb;
 }
 function deleteUserFromDatabase(emailOrId, {
@@ -12394,26 +12320,9 @@ function deleteUserFromDatabase(emailOrId, {
     source: stats.source,
     stats
   });
-  if (syncCloud && usersDbIsHttpProtocol()) {
-    usersDbPostJsonWithTimeout('/api/users-db', {
-      action: 'delete',
-      email: matched.email
-    }, 4500).then(data => {
-      if (data && data.ok && data.db && Array.isArray(data.db.users)) {
-        if (typeof window !== 'undefined') {
-          window.__KOMPAS_USERS_CLOUD_ACTIVE__ = true;
-        }
-        const merged = usersDbMergeDatabases(getEffectiveUsersDatabase(), data.db);
-        saveUsersDatabase(merged);
-        const latestStats = getUsersDatabaseStats();
-        usersDbDispatchUpdatedEvent({
-          isCloud: true,
-          source: 'netlify-cloud',
-          stats: latestStats
-        });
-      }
-    });
-  }
+
+  // Cloud sync bez autentifikácie (delete) je odstránený; správu používateľov rieši /api/admin/users.
+
   return {
     ok: true,
     deletedEmail: matched.email,
@@ -12535,6 +12444,16 @@ function refreshExternalUsersDatabaseFromDisk() {
       stats: getUsersDatabaseStats()
     });
   }
+  if (usersDbIsHttpProtocol()) {
+    const localDb = getEffectiveUsersDatabase();
+    return Promise.resolve({
+      ok: false,
+      skipped: true,
+      isCloud: false,
+      db: localDb,
+      stats: getUsersDatabaseStats()
+    });
+  }
   if (usersDbRefreshInFlight) {
     return usersDbRefreshInFlight;
   }
@@ -12622,47 +12541,6 @@ function refreshExternalUsersDatabaseFromDisk() {
         afterScript(false);
       }
     };
-    if (isHttp && typeof fetch === 'function') {
-      usersDbFetchJsonWithTimeout(`/api/users-db?t=${cacheBust}`, 3500).then(payload => {
-        const candidate = payload && typeof payload === 'object' && payload.db && typeof payload.db === 'object' && Array.isArray(payload.db.users) ? payload.db : payload && typeof payload === 'object' && Array.isArray(payload.users) ? payload : null;
-        if (candidate) {
-          const localBefore = getEffectiveUsersDatabase();
-          const cloudNorm = usersDbNormalizeObj(candidate);
-          const merged = usersDbMergeDatabases(localBefore, cloudNorm);
-          window.__KOMPAS_USERS_CLOUD_ACTIVE__ = true;
-          window.__KOMPAS_USERS_DB__ = merged;
-          const saved = saveUsersDatabase(merged);
-          const stats = getUsersDatabaseStats();
-          finished = true;
-          usersDbDispatchUpdatedEvent({
-            isCloud: true,
-            source: 'netlify-cloud',
-            stats
-          });
-
-          // Ak má prehliadač novšie lokálne registrácie alebo zmeny ako cloud, pošleme ich na server
-          if (merged.users.length !== cloudNorm.users.length || usersDbParseTimeMs(merged.updatedAt) > usersDbParseTimeMs(cloudNorm.updatedAt)) {
-            usersDbPostJsonWithTimeout('/api/users-db', {
-              db: saved
-            }, 4000);
-          }
-          resolve({
-            ok: true,
-            loadedExternal: true,
-            isCloud: true,
-            storage: payload && payload.storage || 'netlify-blobs',
-            db: saved,
-            stats,
-            refreshedAt: new Date().toISOString()
-          });
-          return;
-        }
-        runJsonAndScriptFallback();
-      }).catch(() => {
-        runJsonAndScriptFallback();
-      });
-      return;
-    }
     runJsonAndScriptFallback();
   });
   usersDbRefreshInFlight = runRefresh().finally(() => {
@@ -12677,12 +12555,129 @@ function refreshExternalUsersDatabaseFromDisk() {
 
 const STORAGE_AUTH_USERS_KEY = 'manazersky_kompas_auth_users_v1';
 const STORAGE_AUTH_SESSION_KEY = 'manazersky_kompas_auth_session_v1';
+const STORAGE_AUTH_TOKEN_KEY = 'manazersky_kompas_auth_token_v1';
 const STORAGE_LICENSE_META_KEY = 'manazersky_kompas_license_meta_v1';
 const AUTH_PASSWORD_PEPPER = 'manazersky-kompas-v07-sha256-salt';
 const AUTH_PROVIDER_CONFIG = {
   activeProvider: 'local',
   supportedProviders: ['local', 'supabase', 'firebase']
 };
+function getAuthSessionToken() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return '';
+    return String(window.localStorage.getItem(STORAGE_AUTH_TOKEN_KEY) || '').trim();
+  } catch (e) {
+    return '';
+  }
+}
+function saveAuthSessionToken(token) {
+  const cleanToken = String(token || '').trim();
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (cleanToken) {
+        window.localStorage.setItem(STORAGE_AUTH_TOKEN_KEY, cleanToken);
+      } else {
+        window.localStorage.removeItem(STORAGE_AUTH_TOKEN_KEY);
+      }
+    }
+  } catch (e) {
+    // Ignorujeme chybu zápisu tokenu relácie
+  }
+  return cleanToken;
+}
+function clearAuthSessionToken() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(STORAGE_AUTH_TOKEN_KEY);
+    }
+  } catch (e) {
+    // Ignorujeme chybu mazania tokenu relácie
+  }
+}
+function isCloudAuthRuntime() {
+  try {
+    if (typeof window === 'undefined' || !window.location) return false;
+    const proto = String(window.location.protocol || '');
+    const host = String(window.location.hostname || '').toLowerCase();
+    const href = String(window.location.href || '');
+    if (proto !== 'http:' && proto !== 'https:') return false;
+    if (host === 'kompas.app' || href.indexOf('android_asset') !== -1) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function authIsServerSessionActive(sessionObj = null) {
+  try {
+    if (typeof window !== 'undefined' && window.__KOMPAS_SERVER_AUTH_ACTIVE__ === true) {
+      return true;
+    }
+  } catch (e) {
+    // noop
+  }
+  if (sessionObj && sessionObj.serverVerified === true) return true;
+  return Boolean(getAuthSessionToken());
+}
+async function authFetchApiJson(url, options = {}, timeoutMs = 5500) {
+  if (typeof fetch !== 'function') {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      networkError: true,
+      notEdgeApi: false
+    };
+  }
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const reqHeaders = {
+      ...(options.headers || {})
+    };
+    if (options.body && !reqHeaders['Content-Type']) {
+      reqHeaders['Content-Type'] = 'application/json';
+    }
+    const resp = await fetch(url, {
+      cache: 'no-store',
+      ...options,
+      headers: reqHeaders,
+      signal: controller ? controller.signal : undefined
+    });
+    const contentType = String(resp.headers?.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('application/json')) {
+      return {
+        ok: false,
+        status: resp.status || 404,
+        data: null,
+        networkError: false,
+        notEdgeApi: true
+      };
+    }
+    const data = await resp.json().catch(() => null);
+    return {
+      ok: Boolean(resp.ok && data && data.ok !== false),
+      status: resp.status,
+      data,
+      networkError: false,
+      notEdgeApi: !data || typeof data !== 'object'
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      networkError: true,
+      notEdgeApi: false
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+function authIsOfflineFallbackAllowed(apiRes) {
+  if (!apiRes) return true;
+  if (apiRes.networkError || apiRes.notEdgeApi || apiRes.status === 0) return true;
+  return apiRes.status === 404 && !apiRes.data;
+}
 const AUTH_ACCOUNT_TYPES = [{
   id: 'student',
   label: '🎓 Študent VŠ',
@@ -12840,12 +12835,12 @@ function getUserInitials(fullName) {
 }
 function validateAuthPassword(password) {
   const pwd = String(password || '');
-  if (pwd.length < 6) {
+  if (pwd.length < 8) {
     return {
       valid: false,
       strength: 'weak',
-      label: 'Slabé (min. 6 znakov)',
-      message: 'Heslo musí obsahovať aspoň 6 znakov.'
+      label: 'Slabé (min. 8 znakov)',
+      message: 'Heslo musí obsahovať aspoň 8 znakov.'
     };
   }
   const hasUpper = /[A-ZÁÄČĎÉÍĹĽŇÓÔŔŠŤÚÝŽ]/.test(pwd);
@@ -12972,14 +12967,19 @@ function authEnsureDemoAccountsSeeded() {
   }
   return users;
 }
-function authSaveSession(userRecord) {
+function authSaveSession(userRecord, options = {}) {
   const publicUser = authToPublicUser(userRecord);
+  const isServer = Boolean(options?.serverVerified || typeof window !== 'undefined' && window.__KOMPAS_SERVER_AUTH_ACTIVE__ === true);
+  if (isServer && typeof window !== 'undefined') {
+    window.__KOMPAS_SERVER_AUTH_ACTIVE__ = true;
+  }
   const sessionPayload = {
     userId: publicUser.id,
     email: publicUser.email,
     user: publicUser,
+    serverVerified: isServer,
     authenticatedAt: new Date().toISOString(),
-    provider: AUTH_PROVIDER_CONFIG.activeProvider
+    provider: isServer ? 'netlify-auth' : AUTH_PROVIDER_CONFIG.activeProvider
   };
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -13215,6 +13215,29 @@ function parseAndVerifyLicenseKey(rawKey, nowDate = null) {
       daysRemaining: null,
       formattedExpiry: null,
       error: 'Zadajte prosím licenčný kľúč.'
+    };
+  }
+  if (cleanKey.startsWith('KOMPAS-V2-')) {
+    const v2FormatMatch = cleanKey.match(/^KOMPAS-V2-(EDU|PRO|FREE)-(PERM|\d{8})-[A-Z0-9]{4,8}-[A-F0-9]{6,16}$/);
+    const v2ProgMeta = v2FormatMatch ? AUTH_LICENSE_PROGRAM_MAP[v2FormatMatch[1]] : null;
+    return {
+      valid: false,
+      isSigned: true,
+      isV2ServerKey: true,
+      inDatabase: false,
+      dbStatus: v2FormatMatch ? 'server_only' : 'invalid',
+      dbNote: '',
+      cleanKey,
+      tier: null,
+      programCode: v2ProgMeta ? v2ProgMeta.code : null,
+      programLabel: v2ProgMeta ? v2ProgMeta.label : null,
+      isPermanent: v2FormatMatch ? v2FormatMatch[2] === 'PERM' : false,
+      expiresAt: null,
+      expiryDateCode: v2FormatMatch ? v2FormatMatch[2] : null,
+      isExpired: false,
+      daysRemaining: null,
+      formattedExpiry: null,
+      error: v2FormatMatch ? 'Kľúč formátu KOMPAS-V2 vyžaduje overenie na serveri (pripojte sa na internet).' : 'Neplatný formát serverového licenčného kľúča KOMPAS-V2.'
     };
   }
   const segments = cleanKey.split('-');
@@ -13726,6 +13749,9 @@ function authGetRawCurrentUserRecord() {
     if (!rawSession) return null;
     const session = JSON.parse(rawSession);
     if (!session || !session.email) return null;
+    if (authIsServerSessionActive(session) && session.user) {
+      return authToPublicUser(session.user);
+    }
     const users = authEnsureDemoAccountsSeeded();
     const matched = users.find(u => session.userId && u.id === session.userId || authNormalizeEmail(u.email) === authNormalizeEmail(session.email));
     if (matched) {
@@ -13748,6 +13774,79 @@ function authInspectActiveLicenseStatus(autoClearExpired = true) {
     const userKey = String(current.licenseKey || '').trim().toUpperCase();
     const userExpiresAt = current.licenseExpiresAt || null;
     const userTier = authNormalizeTierFallback(current.tier || 'free');
+    if (userKey && authIsServerSessionActive()) {
+      const expMs = userExpiresAt ? new Date(userExpiresAt).getTime() : NaN;
+      const isTimeExpired = Number.isFinite(expMs) && Date.now() > expMs;
+      const isPermanent = !userExpiresAt;
+      const formattedExpiry = isPermanent ? 'Trvalá licencia' : authFormatExpiryDateSk(userExpiresAt);
+      if (isTimeExpired) {
+        if (autoClearExpired) {
+          authClearExpiredLicenseOnUser(current);
+          authClearLicenseMeta();
+          authSyncTierStore('free');
+        }
+        return {
+          active: false,
+          isExpired: true,
+          isRevoked: false,
+          revokedKey: null,
+          expiredKey: userKey,
+          expiredAtFormatted: formattedExpiry,
+          dbStatus: 'active',
+          dbNote: '',
+          error: `Platnosť tohto licenčného kľúča vypršala dňa ${formattedExpiry}.`,
+          licenseKey: '',
+          tier: 'free',
+          programCode: userTier === 'enterprise_pro' ? 'PRO' : userTier === 'edu_pro' ? 'EDU' : 'FREE',
+          programLabel: current.licenseProgram || '',
+          isPermanent: false,
+          expiresAt: null,
+          daysRemaining: 0,
+          formattedExpiry,
+          isSigned: userKey.startsWith('KOMPAS-'),
+          startupCheckedAt: checkedAt
+        };
+      }
+      if (autoClearExpired) {
+        if (storedTierRaw !== userTier) {
+          authSyncTierStore(userTier);
+        }
+        if (!storedMeta || storedMeta.licenseKey !== userKey || storedMeta.tier !== userTier || storedMeta.expiresAt !== (userExpiresAt || null)) {
+          authSaveLicenseMeta({
+            licenseKey: userKey,
+            tier: userTier,
+            programCode: userTier === 'enterprise_pro' ? 'PRO' : userTier === 'edu_pro' ? 'EDU' : 'FREE',
+            programLabel: current.licenseProgram || '',
+            expiresAt: userExpiresAt || null,
+            isPermanent,
+            activatedAt: current.licenseActivatedAt || checkedAt
+          });
+        }
+      }
+      const daysRemaining = isPermanent ? null : authComputeDaysRemaining(new Date(userExpiresAt), new Date());
+      return {
+        active: true,
+        isExpired: false,
+        isRevoked: false,
+        revokedKey: null,
+        expiredKey: null,
+        expiredAtFormatted: null,
+        inDatabase: true,
+        dbStatus: 'active',
+        dbNote: '',
+        error: null,
+        licenseKey: userKey,
+        tier: userTier,
+        programCode: userTier === 'enterprise_pro' ? 'PRO' : userTier === 'edu_pro' ? 'EDU' : 'FREE',
+        programLabel: current.licenseProgram || '',
+        isPermanent,
+        expiresAt: userExpiresAt || null,
+        daysRemaining,
+        formattedExpiry,
+        isSigned: userKey.startsWith('KOMPAS-'),
+        startupCheckedAt: checkedAt
+      };
+    }
     if (userKey) {
       const parsed = parseAndVerifyLicenseKey(userKey);
       const effectiveExpiresAt = parsed.expiresAt || userExpiresAt || null;
@@ -13987,12 +14086,29 @@ function authInspectActiveLicenseStatus(autoClearExpired = true) {
     startupCheckedAt: checkedAt
   };
 }
+function authBuildServerLicenseMeta(userRecord, parsedLicense = null) {
+  const cleanKey = String(parsedLicense && parsedLicense.cleanKey || userRecord && userRecord.licenseKey || '').trim().toUpperCase();
+  if (!cleanKey) return null;
+  const tier = authNormalizeTierFallback(parsedLicense && parsedLicense.tier || userRecord && userRecord.tier || 'free');
+  const expiresAt = parsedLicense && parsedLicense.expiresAt || userRecord && userRecord.licenseExpiresAt || null;
+  const programLabel = parsedLicense && parsedLicense.programLabel || userRecord && userRecord.licenseProgram || '';
+  const programCode = parsedLicense && parsedLicense.programCode || (tier === 'enterprise_pro' ? 'PRO' : tier === 'edu_pro' ? 'EDU' : 'FREE');
+  return {
+    licenseKey: cleanKey,
+    tier,
+    programCode,
+    programLabel,
+    expiresAt,
+    isPermanent: Boolean(parsedLicense ? parsedLicense.isPermanent : !expiresAt),
+    activatedAt: userRecord && userRecord.licenseActivatedAt || new Date().toISOString()
+  };
+}
 function authAttachDbCloudMeta(status) {
   const dbStats = typeof getLicenseDatabaseStats === 'function' ? getLicenseDatabaseStats() : null;
   return {
     ...status,
-    isCloud: Boolean(dbStats && dbStats.isCloud || typeof window !== 'undefined' && window.__KOMPAS_NETLIFY_CLOUD_ACTIVE__ === true),
-    dbSource: dbStats && dbStats.source || 'seed'
+    isCloud: Boolean(authIsServerSessionActive() || dbStats && dbStats.isCloud || typeof window !== 'undefined' && window.__KOMPAS_NETLIFY_CLOUD_ACTIVE__ === true),
+    dbSource: authIsServerSessionActive() ? 'netlify-cloud' : dbStats && dbStats.source || 'seed'
   };
 }
 function getActiveLicenseStatus() {
@@ -14001,9 +14117,137 @@ function getActiveLicenseStatus() {
 function peekActiveLicenseStatus() {
   return authAttachDbCloudMeta(authInspectActiveLicenseStatus(false));
 }
+async function verifyLicenseKeyOnline(rawKey) {
+  const cleanKey = String(rawKey || '').trim().toUpperCase();
+  if (!cleanKey) {
+    return parseAndVerifyLicenseKey('');
+  }
+  if (isCloudAuthRuntime()) {
+    const apiRes = await authFetchApiJson('/api/license/verify', {
+      method: 'POST',
+      body: JSON.stringify({
+        licenseKey: cleanKey
+      })
+    });
+    if (apiRes.ok && apiRes.data && apiRes.data.parsed) {
+      return apiRes.data.parsed;
+    }
+    if (!authIsOfflineFallbackAllowed(apiRes)) {
+      if (apiRes.data && apiRes.data.parsed) {
+        return apiRes.data.parsed;
+      }
+      return {
+        valid: false,
+        isSigned: cleanKey.startsWith('KOMPAS-'),
+        inDatabase: false,
+        dbStatus: 'invalid',
+        dbNote: '',
+        cleanKey,
+        tier: null,
+        programCode: null,
+        programLabel: null,
+        isPermanent: false,
+        expiresAt: null,
+        expiryDateCode: null,
+        isExpired: false,
+        daysRemaining: null,
+        formattedExpiry: null,
+        error: apiRes.data && apiRes.data.error || 'Licenčný kľúč sa nepodarilo overiť na serveri.'
+      };
+    }
+  }
+  return parseAndVerifyLicenseKey(cleanKey);
+}
+async function refreshSessionFromServer() {
+  const token = getAuthSessionToken();
+  if (!token || !isCloudAuthRuntime()) {
+    return {
+      ok: false,
+      skipped: true,
+      isCloud: false,
+      status: getActiveLicenseStatus(),
+      user: getCurrentUser()
+    };
+  }
+  const apiRes = await authFetchApiJson('/api/auth/me', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  if (apiRes.status === 401) {
+    logoutUser();
+    return {
+      ok: false,
+      unauthenticated: true,
+      error: apiRes.data && apiRes.data.error || 'Platnosť relácie vypršala. Prihláste sa prosím znova.',
+      status: getActiveLicenseStatus(),
+      user: null
+    };
+  }
+  if (authIsOfflineFallbackAllowed(apiRes) || !apiRes.ok || !apiRes.data || !apiRes.data.user) {
+    return {
+      ok: false,
+      skipped: true,
+      isCloud: false,
+      status: getActiveLicenseStatus(),
+      user: getCurrentUser()
+    };
+  }
+  const serverUser = apiRes.data.user;
+  if (typeof window !== 'undefined') {
+    window.__KOMPAS_SERVER_AUTH_ACTIVE__ = true;
+    window.__KOMPAS_NETLIFY_CLOUD_ACTIVE__ = true;
+  }
+  if (serverUser.licenseKey) {
+    const meta = authBuildServerLicenseMeta(serverUser);
+    if (meta) authSaveLicenseMeta(meta);
+  } else {
+    authClearLicenseMeta();
+  }
+  const savedUser = authSaveSession(serverUser, {
+    serverVerified: true
+  });
+  const syncedTier = authSyncTierStore(serverUser.tier || 'free');
+  const localStatus = getActiveLicenseStatus();
+  const serverLicStatus = apiRes.data.licenseStatus || null;
+  const mergedStatus = serverLicStatus && (serverLicStatus.isExpired || serverLicStatus.isRevoked) ? {
+    ...localStatus,
+    ...serverLicStatus,
+    active: false,
+    tier: syncedTier,
+    isCloud: true,
+    dbSource: 'netlify-cloud'
+  } : localStatus;
+  return {
+    ok: true,
+    isCloud: true,
+    user: {
+      ...savedUser,
+      tier: syncedTier
+    },
+    status: mergedStatus,
+    licenseStatus: serverLicStatus
+  };
+}
 function getCurrentUser() {
   const rawUser = authGetRawCurrentUserRecord();
   if (!rawUser) return null;
+  if (authIsServerSessionActive()) {
+    if (rawUser.licenseKey && rawUser.licenseExpiresAt) {
+      const expMs = new Date(rawUser.licenseExpiresAt).getTime();
+      if (Number.isFinite(expMs) && Date.now() > expMs) {
+        return {
+          ...rawUser,
+          tier: 'free',
+          licenseKey: '',
+          licenseExpiresAt: null,
+          licenseProgram: ''
+        };
+      }
+    }
+    return rawUser;
+  }
   if (rawUser.licenseKey) {
     const parsed = parseAndVerifyLicenseKey(rawUser.licenseKey);
     if (!parsed.valid) {
@@ -14032,7 +14276,7 @@ function getCurrentUser() {
   }
   return rawUser;
 }
-function registerUser({
+async function registerUser({
   fullName,
   email,
   password,
@@ -14066,8 +14310,59 @@ function registerUser({
   if (!consent) {
     return {
       ok: false,
-      error: 'Pre vytvorenie účtu potvrďte súhlas so spracovaním lokálnych údajov účtu.'
+      error: 'Pre vytvorenie účtu potvrďte súhlas so spracovaním údajov účtu.'
     };
+  }
+  const pendingKey = typeof getPendingLicenseKey === 'function' ? getPendingLicenseKey() : '';
+  if (isCloudAuthRuntime()) {
+    const apiRes = await authFetchApiJson('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        fullName: cleanName,
+        email: cleanEmail,
+        password: rawPassword,
+        accountType,
+        organization: cleanOrg,
+        consent: Boolean(consent),
+        pendingLicenseKey: pendingKey || ''
+      })
+    });
+    if (apiRes.ok && apiRes.data && apiRes.data.user && apiRes.data.token) {
+      if (pendingKey && typeof clearPendingLicenseKey === 'function') {
+        clearPendingLicenseKey();
+      }
+      saveAuthSessionToken(apiRes.data.token);
+      if (typeof window !== 'undefined') {
+        window.__KOMPAS_SERVER_AUTH_ACTIVE__ = true;
+        window.__KOMPAS_NETLIFY_CLOUD_ACTIVE__ = true;
+      }
+      const serverUser = apiRes.data.user;
+      if (serverUser.licenseKey) {
+        const meta = authBuildServerLicenseMeta(serverUser);
+        if (meta) authSaveLicenseMeta(meta);
+      } else {
+        authClearLicenseMeta();
+      }
+      const publicUser = authSaveSession(serverUser, {
+        serverVerified: true
+      });
+      const syncedTier = authSyncTierStore(serverUser.tier || 'free');
+      return {
+        ok: true,
+        user: {
+          ...publicUser,
+          tier: syncedTier
+        },
+        pendingActivationError: apiRes.data.pendingActivationError || '',
+        message: apiRes.data.message || 'Účet bol úspešne vytvorený na serveri. Získali ste bezplatný balík Free.'
+      };
+    }
+    if (!authIsOfflineFallbackAllowed(apiRes)) {
+      return {
+        ok: false,
+        error: apiRes.data && apiRes.data.error || 'Registrácia účtu na serveri zlyhala.'
+      };
+    }
   }
   const users = authEnsureDemoAccountsSeeded();
   if (users.some(u => authNormalizeEmail(u.email) === cleanEmail)) {
@@ -14085,7 +14380,6 @@ function registerUser({
   let inheritedProgram = '';
   let inheritedActivatedAt = null;
   let pendingActivationError = '';
-  const pendingKey = typeof getPendingLicenseKey === 'function' ? getPendingLicenseKey() : '';
   const nowIso = new Date().toISOString();
   if (pendingKey) {
     const parsedPending = parseAndVerifyLicenseKey(pendingKey);
@@ -14127,10 +14421,12 @@ function registerUser({
   authSaveUsersList(users);
   if (typeof upsertUserRecordInDatabase === 'function') {
     upsertUserRecordInDatabase(newUser, {
-      syncCloud: true
+      syncCloud: false
     });
   }
-  const publicUser = authSaveSession(newUser);
+  const publicUser = authSaveSession(newUser, {
+    serverVerified: false
+  });
   const syncedTier = authSyncTierStore(inheritedTier);
   return {
     ok: true,
@@ -14139,10 +14435,10 @@ function registerUser({
       tier: syncedTier
     },
     pendingActivationError,
-    message: inheritedLicenseKey ? `Účet bol vytvorený a čakajúci licenčný kľúč (${inheritedProgram}) bol priradený k vášmu profilu.` : 'Účet bol úspešne vytvorený a zapísaný do databázy používateľov. Získali ste bezplatný balík Free.'
+    message: inheritedLicenseKey ? `Účet bol vytvorený a čakajúci licenčný kľúč (${inheritedProgram}) bol priradený k vášmu profilu.` : 'Účet bol úspešne vytvorený a uložený lokálne. Získali ste bezplatný balík Free.'
   };
 }
-function loginUser({
+async function loginUser({
   email,
   password
 } = {}) {
@@ -14159,6 +14455,60 @@ function loginUser({
       ok: false,
       error: 'Zadajte prosím svoje heslo.'
     };
+  }
+  const pendingKey = typeof getPendingLicenseKey === 'function' ? getPendingLicenseKey() : '';
+  if (isCloudAuthRuntime()) {
+    const apiRes = await authFetchApiJson('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: cleanEmail,
+        password: rawPassword,
+        pendingLicenseKey: pendingKey || ''
+      })
+    });
+    if (apiRes.ok && apiRes.data && apiRes.data.user && apiRes.data.token) {
+      if (pendingKey && typeof clearPendingLicenseKey === 'function') {
+        clearPendingLicenseKey();
+      }
+      saveAuthSessionToken(apiRes.data.token);
+      if (typeof window !== 'undefined') {
+        window.__KOMPAS_SERVER_AUTH_ACTIVE__ = true;
+        window.__KOMPAS_NETLIFY_CLOUD_ACTIVE__ = true;
+      }
+      const serverUser = apiRes.data.user;
+      if (serverUser.licenseKey) {
+        const meta = authBuildServerLicenseMeta(serverUser, apiRes.data.pendingKeyActivated);
+        if (meta) authSaveLicenseMeta(meta);
+      } else {
+        authClearLicenseMeta();
+      }
+      const publicUser = authSaveSession(serverUser, {
+        serverVerified: true
+      });
+      const syncedTier = authSyncTierStore(publicUser.tier || 'free');
+      return {
+        ok: true,
+        user: {
+          ...publicUser,
+          tier: syncedTier
+        },
+        licenseExpired: Boolean(apiRes.data.licenseExpired),
+        expiredKey: apiRes.data.expiredKey || '',
+        expiredAtFormatted: apiRes.data.expiredAtFormatted || '',
+        licenseRevoked: Boolean(apiRes.data.licenseRevoked),
+        revokedKey: apiRes.data.revokedKey || '',
+        revokedError: apiRes.data.revokedError || '',
+        pendingKeyActivated: apiRes.data.pendingKeyActivated || null,
+        pendingKeyError: apiRes.data.pendingKeyError || '',
+        message: apiRes.data.message || `Vitajte späť, ${publicUser.fullName}!`
+      };
+    }
+    if (!authIsOfflineFallbackAllowed(apiRes)) {
+      return {
+        ok: false,
+        error: apiRes.data && apiRes.data.error || 'Prihlásenie na serveri zlyhalo.'
+      };
+    }
   }
   const users = authEnsureDemoAccountsSeeded();
   const userIdx = users.findIndex(u => authNormalizeEmail(u.email) === cleanEmail);
@@ -14192,7 +14542,6 @@ function loginUser({
   let revokedError = '';
   let pendingKeyActivated = null;
   let pendingKeyError = '';
-  const pendingKey = typeof getPendingLicenseKey === 'function' ? getPendingLicenseKey() : '';
   if (pendingKey) {
     const parsedPending = parseAndVerifyLicenseKey(pendingKey);
     if (typeof clearPendingLicenseKey === 'function') {
@@ -14272,10 +14621,12 @@ function loginUser({
   authSaveUsersList(users);
   if (typeof upsertUserRecordInDatabase === 'function') {
     upsertUserRecordInDatabase(updatedRecord, {
-      syncCloud: true
+      syncCloud: false
     });
   }
-  const publicUser = authSaveSession(users[userIdx]);
+  const publicUser = authSaveSession(users[userIdx], {
+    serverVerified: false
+  });
   const syncedTier = authSyncTierStore(publicUser.tier || 'free');
   return {
     ok: true,
@@ -14295,6 +14646,24 @@ function loginUser({
   };
 }
 function logoutUser() {
+  const token = getAuthSessionToken();
+  if (token && isCloudAuthRuntime() && typeof fetch === 'function') {
+    try {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        keepalive: true
+      }).catch(() => null);
+    } catch (e) {
+      // noop
+    }
+  }
+  clearAuthSessionToken();
+  if (typeof window !== 'undefined') {
+    window.__KOMPAS_SERVER_AUTH_ACTIVE__ = false;
+  }
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       window.localStorage.removeItem(STORAGE_AUTH_SESSION_KEY);
@@ -14311,7 +14680,7 @@ function logoutUser() {
     ok: true
   };
 }
-function updateUserTier(tier, licenseKey = '') {
+async function updateUserTier(tier, licenseKey = '') {
   const rawKey = String(licenseKey || '').trim().toUpperCase();
   const current = getCurrentUser();
 
@@ -14323,6 +14692,90 @@ function updateUserTier(tier, licenseKey = '') {
       pendingKey: rawKey || '',
       error: 'Pre prechod na režim Pro a aktiváciu licenčného kľúča sa musíte najprv bezplatne zaregistrovať alebo prihlásiť do účtu.'
     };
+  }
+  const token = getAuthSessionToken();
+  if (isCloudAuthRuntime() && token) {
+    if (rawKey) {
+      const apiRes = await authFetchApiJson('/api/license/activate', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          licenseKey: rawKey
+        })
+      });
+      if (apiRes.ok && apiRes.data && apiRes.data.user) {
+        if (typeof window !== 'undefined') {
+          window.__KOMPAS_SERVER_AUTH_ACTIVE__ = true;
+          window.__KOMPAS_NETLIFY_CLOUD_ACTIVE__ = true;
+        }
+        const syncedTier = authSyncTierStore(apiRes.data.tier || apiRes.data.user.tier);
+        const licenseMeta = apiRes.data.licenseMeta || authBuildServerLicenseMeta(apiRes.data.user, apiRes.data.parsed);
+        if (licenseMeta) authSaveLicenseMeta(licenseMeta);
+        const updatedUser = authSaveSession(apiRes.data.user, {
+          serverVerified: true
+        });
+        return {
+          ok: true,
+          tier: syncedTier,
+          user: updatedUser,
+          licenseMeta,
+          parsed: apiRes.data.parsed
+        };
+      }
+      if (!authIsOfflineFallbackAllowed(apiRes)) {
+        if (apiRes.status === 401) {
+          return {
+            ok: false,
+            requiresAuth: true,
+            pendingKey: rawKey,
+            error: apiRes.data && apiRes.data.error || 'Vaša relácia vypršala. Prihláste sa prosím znova.'
+          };
+        }
+        return {
+          ok: false,
+          error: apiRes.data && apiRes.data.error || apiRes.data && apiRes.data.parsed && apiRes.data.parsed.error || 'Neplatný licenčný kľúč.'
+        };
+      }
+    } else {
+      const resolvedTier = authNormalizeTierFallback(tier || 'free');
+      if (resolvedTier === 'edu_pro' || resolvedTier === 'enterprise_pro') {
+        return {
+          ok: false,
+          error: 'Pre prechod na balík Pro zadajte prosím platný licenčný kľúč.'
+        };
+      }
+      const apiRes = await authFetchApiJson('/api/auth/tier', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          tier: resolvedTier
+        })
+      });
+      if (apiRes.ok && apiRes.data && apiRes.data.user) {
+        const syncedTier = authSyncTierStore(apiRes.data.tier || 'free');
+        authClearLicenseMeta();
+        const updatedUser = authSaveSession(apiRes.data.user, {
+          serverVerified: true
+        });
+        return {
+          ok: true,
+          tier: syncedTier,
+          user: updatedUser,
+          licenseMeta: null
+        };
+      }
+      if (!authIsOfflineFallbackAllowed(apiRes)) {
+        return {
+          ok: false,
+          requiresAuth: apiRes.status === 401,
+          error: apiRes.data && apiRes.data.error || 'Zmena balíka na serveri zlyhala.'
+        };
+      }
+    }
   }
   if (rawKey) {
     const parsed = parseAndVerifyLicenseKey(rawKey);
@@ -14351,10 +14804,12 @@ function updateUserTier(tier, licenseKey = '') {
       authSaveUsersList(users);
       if (typeof upsertUserRecordInDatabase === 'function') {
         upsertUserRecordInDatabase(users[idx], {
-          syncCloud: true
+          syncCloud: false
         });
       }
-      const updatedUser = authSaveSession(users[idx]);
+      const updatedUser = authSaveSession(users[idx], {
+        serverVerified: false
+      });
       return {
         ok: true,
         tier: syncedTier,
@@ -14374,7 +14829,7 @@ function updateUserTier(tier, licenseKey = '') {
     };
     if (typeof upsertUserRecordInDatabase === 'function') {
       upsertUserRecordInDatabase(fallbackUser, {
-        syncCloud: true
+        syncCloud: false
       });
     }
     return {
@@ -14412,10 +14867,12 @@ function updateUserTier(tier, licenseKey = '') {
     authSaveUsersList(users);
     if (typeof upsertUserRecordInDatabase === 'function') {
       upsertUserRecordInDatabase(users[idx], {
-        syncCloud: true
+        syncCloud: false
       });
     }
-    const updatedUser = authSaveSession(users[idx]);
+    const updatedUser = authSaveSession(users[idx], {
+      serverVerified: false
+    });
     return {
       ok: true,
       tier: syncedTier,
@@ -14434,7 +14891,7 @@ function updateUserTier(tier, licenseKey = '') {
   };
   if (typeof upsertUserRecordInDatabase === 'function') {
     upsertUserRecordInDatabase(fallbackUser, {
-      syncCloud: true
+      syncCloud: false
     });
   }
   return {
@@ -60196,7 +60653,7 @@ function InstallModal({
 
 function AuthModal(props) {
   if (!props.isOpen) return null;
-  const panelKey = `${props.initialTab || 'register'}_${props.currentUser?.id || 'guest'}`;
+  const panelKey = `${props.initialTab || 'register'}_${props.currentUser?.id || 'guest'}_${props.isDevMode ? 'dev' : 'pub'}`;
   return /*#__PURE__*/React.createElement(AuthModalPanel, {
     key: panelKey,
     ...props
@@ -60209,6 +60666,7 @@ function AuthModalPanel({
   activeProjectName = 'Rozpracovaný projekt',
   totalMethodsCount = 39,
   pendingUpgradeInfo = null,
+  isDevMode = false,
   onClose,
   onAuthSuccess,
   onTierUpdated,
@@ -60216,7 +60674,7 @@ function AuthModalPanel({
   onOpenPricingModal
 }) {
   const resolveInitialTab = () => {
-    if (initialTab === 'users_db') return 'users_db';
+    if (initialTab === 'users_db' && isDevMode) return 'users_db';
     if (currentUser) {
       if (initialTab === 'login' || initialTab === 'register') return initialTab;
       return 'account';
@@ -60241,14 +60699,21 @@ function AuthModalPanel({
   const [isRefreshingCloud, setIsRefreshingCloud] = useState(false);
   const [dbStats, setDbStats] = useState(() => getLicenseDatabaseStats());
   const dbFileInputRef = useRef(null);
-  const [usersDbList, setUsersDbList] = useState(() => getRegisteredUsersList());
-  const [usersDbStats, setUsersDbStats] = useState(() => getUsersDatabaseStats());
+  const [usersDbList, setUsersDbList] = useState(() => isDevMode ? getRegisteredUsersList() : []);
+  const [usersDbStats, setUsersDbStats] = useState(() => isDevMode ? getUsersDatabaseStats() : {
+    total: 0,
+    registeredCount: 0,
+    freeCount: 0,
+    eduProCount: 0,
+    enterpriseProCount: 0
+  });
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [userTierFilter, setUserTierFilter] = useState('ALL');
   const [isSyncingUsersCloud, setIsSyncingUsersCloud] = useState(false);
   const usersDbFileInputRef = useRef(null);
   const pendingLicenseKeyPreview = getPendingLicenseKey();
   const refreshLocalUsersView = () => {
+    if (!isDevMode) return;
     setUsersDbList(getRegisteredUsersList());
     setUsersDbStats(getUsersDatabaseStats());
   };
@@ -60289,7 +60754,11 @@ function AuthModalPanel({
   const freeTierMeta = ACCESS_TIERS.free;
   const freeUnlockedCount = getUnlockedMethodsCount('free', totalMethodsCount);
   const freeMaxProjects = getMaxProjects('free');
-  const currentAccountLicenseParsed = currentUser?.licenseKey ? parseAndVerifyLicenseKey(currentUser.licenseKey) : null;
+  const currentAccountLicenseStatus = currentUser?.licenseKey ? peekActiveLicenseStatus() : null;
+  const currentAccountLicenseParsed = currentAccountLicenseStatus ? {
+    ...currentAccountLicenseStatus,
+    cleanKey: currentAccountLicenseStatus.licenseKey || currentUser.licenseKey
+  } : null;
   const handleSwitchTab = tab => {
     setErrorMsg('');
     setStatusMsg('');
@@ -60387,26 +60856,21 @@ function AuthModalPanel({
       }
     });
   };
-  const runApplyLicenseKeyWithCloudRetry = (trimmedKey, allowCloudRetry) => {
-    const parsed = parseAndVerifyLicenseKey(trimmedKey);
-    if (!parsed.valid) {
-      const canRetryHttp = allowCloudRetry && parsed.dbStatus === 'not_found' && typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
-      if (canRetryHttp) {
-        setIsSubmitting(true);
-        refreshExternalLicenseDatabaseFromDisk().then(refRes => {
-          setIsSubmitting(false);
-          setDbStats(refRes && refRes.stats || getLicenseDatabaseStats());
-          runApplyLicenseKeyWithCloudRetry(trimmedKey, false);
-        }, () => {
-          setIsSubmitting(false);
-          setErrorMsg(parsed.error || 'Neplatný licenčný kľúč.');
-        });
+  const runApplyLicenseKeyWithCloudRetry = async trimmedKey => {
+    setIsSubmitting(true);
+    try {
+      const parsed = await verifyLicenseKeyOnline(trimmedKey);
+      if (!parsed || !parsed.valid) {
+        setErrorMsg(parsed && parsed.error || 'Neplatný licenčný kľúč.');
         return;
       }
-      setErrorMsg(parsed.error || 'Neplatný licenčný kľúč.');
-      return;
+      setIsSubmitting(false);
+      handleActivateLicenseOrTier(parsed.tier, parsed.cleanKey);
+    } catch (err) {
+      setErrorMsg(err?.message || 'Nepodarilo sa overiť licenčný kľúč.');
+    } finally {
+      setIsSubmitting(false);
     }
-    handleActivateLicenseOrTier(parsed.tier, parsed.cleanKey);
   };
   const handleApplyLicenseKeyForm = e => {
     e.preventDefault();
@@ -60417,7 +60881,7 @@ function AuthModalPanel({
       setErrorMsg('Zadajte prosím licenčný kľúč (napr. KOMPAS-PRO-20261231-A1B2-XXXXXX, KOMPAS-EDU-2026 alebo EDU-UNIV-2026).');
       return;
     }
-    runApplyLicenseKeyWithCloudRetry(trimmed, true);
+    runApplyLicenseKeyWithCloudRetry(trimmed);
   };
   const handleRefreshAuthCloudDb = async () => {
     if (isRefreshingCloud) return;
@@ -60425,6 +60889,30 @@ function AuthModalPanel({
     setErrorMsg('');
     setStatusMsg('');
     try {
+      if (isCloudAuthRuntime()) {
+        const res = await refreshSessionFromServer();
+        const latestStatus = res && res.status || getActiveLicenseStatus();
+        const updatedUser = getCurrentUser();
+        setLicenseKeyInput(updatedUser?.licenseKey || '');
+        if (res && res.unauthenticated) {
+          setErrorMsg(res.error || 'Platnosť relácie vypršala. Prihláste sa prosím znova.');
+        } else if (latestStatus.isRevoked) {
+          setErrorMsg(latestStatus.error || `Váš aktuálny licenčný kľúč${latestStatus.revokedKey ? ` (${latestStatus.revokedKey})` : ''} bol zablokovaný alebo odstránený.`);
+        } else if (latestStatus.isExpired) {
+          setErrorMsg(latestStatus.error || `Platnosť vášho licenčného kľúča vypršala dňa ${latestStatus.expiredAtFormatted}.`);
+        } else if (res && res.ok) {
+          setStatusMsg('☁️ Účet a stav licencie boli úspešne overené na serveri.');
+        } else {
+          setStatusMsg('Stav účtu a lokálnej relácie bol skontrolovaný.');
+        }
+        if (onTierUpdated) {
+          onTierUpdated(latestStatus.tier, updatedUser, {
+            dbRefreshed: true,
+            status: latestStatus
+          });
+        }
+        return;
+      }
       const refRes = await refreshExternalLicenseDatabaseFromDisk();
       const latestStats = refRes && refRes.stats || getLicenseDatabaseStats();
       setDbStats(latestStats);
@@ -60435,8 +60923,6 @@ function AuthModalPanel({
         setErrorMsg(latestStatus.error || `Váš aktuálny licenčný kľúč${latestStatus.revokedKey ? ` (${latestStatus.revokedKey})` : ''} bol v databáze zablokovaný alebo odstránený.`);
       } else if (latestStatus.isExpired) {
         setErrorMsg(latestStatus.error || `Platnosť vášho licenčného kľúča vypršala dňa ${latestStatus.expiredAtFormatted}.`);
-      } else if (latestStats.source === 'netlify-cloud') {
-        setStatusMsg(`☁️ Netlify Cloud Databáza kľúčov bola obnovená (${latestStats.active} aktívnych${latestStats.revoked > 0 ? `, ${latestStats.revoked} zablokovaných` : ''}).`);
       } else {
         setStatusMsg(`Databáza kľúčov bola obnovená (${latestStats.active} aktívnych${latestStats.revoked > 0 ? `, ${latestStats.revoked} zablokovaných` : ''}).`);
       }
@@ -60651,7 +61137,7 @@ function AuthModalPanel({
     className: `inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-extrabold rounded-t-xl border-b-2 transition-all cursor-pointer ${activeTab === 'register' ? 'bg-white text-emerald-700 border-emerald-600 shadow-2xs' : 'text-slate-600 hover:text-slate-900 border-transparent'}`
   }, /*#__PURE__*/React.createElement(UserPlus, {
     className: "w-3.5 h-3.5"
-  }), /*#__PURE__*/React.createElement("span", null, "Bezplatná registrácia")), /*#__PURE__*/React.createElement("button", {
+  }), /*#__PURE__*/React.createElement("span", null, "Bezplatná registrácia")), isDevMode && /*#__PURE__*/React.createElement("button", {
     type: "button",
     onClick: () => {
       refreshLocalUsersView();
@@ -60932,7 +61418,20 @@ function AuthModalPanel({
     className: "rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-[11px] text-slate-600 flex items-center gap-2"
   }, /*#__PURE__*/React.createElement(ShieldCheck, {
     className: "w-3.5 h-3.5 text-emerald-600 shrink-0"
-  }), /*#__PURE__*/React.createElement("span", null, "Aktívny stav: ", /*#__PURE__*/React.createElement("strong", null, currentTierMeta.name), " (bez aktivovaného časového licenčného kľúča).")), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("span", null, "Aktívny stav: ", /*#__PURE__*/React.createElement("strong", null, currentTierMeta.name), " (bez aktivovaného časového licenčného kľúča).")), !isDevMode && isCloudAuthRuntime() ? /*#__PURE__*/React.createElement("div", {
+    className: "rounded-2xl border border-slate-200 bg-slate-50/90 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px]"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2 text-slate-700"
+  }, /*#__PURE__*/React.createElement(ShieldCheck, {
+    className: "w-3.5 h-3.5 shrink-0 text-emerald-600"
+  }), /*#__PURE__*/React.createElement("span", null, "Overenie účtu a licencie prebieha bezpečne na serveri.")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: handleRefreshAuthCloudDb,
+    disabled: isRefreshingCloud,
+    className: "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-colors cursor-pointer disabled:opacity-60"
+  }, /*#__PURE__*/React.createElement(RotateCcw, {
+    className: `w-3 h-3 ${isRefreshingCloud ? 'animate-spin' : ''}`
+  }), /*#__PURE__*/React.createElement("span", null, isRefreshingCloud ? 'Overujem...' : 'Overiť na serveri'))) : /*#__PURE__*/React.createElement("div", {
     className: `rounded-2xl border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] ${dbStats.source === 'netlify-cloud' ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-slate-50/90'}`
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-2 text-slate-700"
@@ -61053,7 +61552,7 @@ function AuthModalPanel({
     className: "w-3.5 h-3.5"
   }), /*#__PURE__*/React.createElement("span", null, "Enterprise Pro")), /*#__PURE__*/React.createElement("div", {
     className: "text-[10px] text-slate-300"
-  }, "Split-Screen • Neobmedzene"))))), activeTab === 'users_db' && /*#__PURE__*/React.createElement("div", {
+  }, "Split-Screen • Neobmedzene"))))), activeTab === 'users_db' && isDevMode && /*#__PURE__*/React.createElement("div", {
     className: "space-y-4"
   }, /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-2 sm:grid-cols-5 gap-2"
@@ -61236,6 +61735,7 @@ function PricingModal({
   highlightTier = null,
   upgradeReason = null,
   totalMethodsCount = 39,
+  isDevMode = false,
   onTierActivated,
   onOpenAuthModal
 }) {
@@ -61247,6 +61747,7 @@ function PricingModal({
     highlightTier: highlightTier,
     upgradeReason: upgradeReason,
     totalMethodsCount: totalMethodsCount,
+    isDevMode: isDevMode,
     onTierActivated: onTierActivated,
     onOpenAuthModal: onOpenAuthModal
   });
@@ -61258,6 +61759,7 @@ function PricingModalPanel({
   highlightTier = null,
   upgradeReason = null,
   totalMethodsCount = 39,
+  isDevMode = false,
   onTierActivated,
   onOpenAuthModal
 }) {
@@ -61356,38 +61858,28 @@ function PricingModalPanel({
       sampleKey
     });
   };
-  const runVerifyAndActivateKey = (cleanKey, allowCloudRetry) => {
-    const parsed = parseAndVerifyLicenseKey(cleanKey);
-    if (!parsed.valid) {
-      const canRetryHttp = allowCloudRetry && parsed.dbStatus === 'not_found' && typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:');
-      if (canRetryHttp) {
-        setIsSubmittingKey(true);
-        refreshExternalLicenseDatabaseFromDisk().then(refRes => {
-          setDbStats(refRes && refRes.stats || getLicenseDatabaseStats());
-          runVerifyAndActivateKey(cleanKey, false);
-        }, () => {
-          setIsSubmittingKey(false);
-          setKeyError(parsed.error || 'Neplatný licenčný kľúč. Použite podpísaný kľúč (KOMPAS-PRO-… / KOMPAS-EDU-… / KOMPAS-FREE-…) alebo ukážkový kľúč.');
+  const runVerifyAndActivateKey = async cleanKey => {
+    setIsSubmittingKey(true);
+    try {
+      const parsed = await verifyLicenseKeyOnline(cleanKey);
+      if (!parsed || !parsed.valid) {
+        setIsSubmittingKey(false);
+        setKeyError(parsed && parsed.error || 'Neplatný licenčný kľúč. Použite podpísaný kľúč (KOMPAS-PRO-… / KOMPAS-EDU-… / KOMPAS-FREE-…) alebo ukážkový kľúč.');
+        return;
+      }
+      if (!currentUser) {
+        setIsSubmittingKey(false);
+        savePendingLicenseKey(parsed.cleanKey);
+        setLicenseKey(parsed.cleanKey);
+        setRequiresAuthNotice({
+          cleanKey: parsed.cleanKey,
+          tier: parsed.tier,
+          programLabel: parsed.programLabel || ACCESS_TIERS[parsed.tier]?.badgeLabel || 'Pro'
         });
         return;
       }
-      setIsSubmittingKey(false);
-      setKeyError(parsed.error || 'Neplatný licenčný kľúč. Použite podpísaný kľúč (KOMPAS-PRO-… / KOMPAS-EDU-… / KOMPAS-FREE-…) alebo ukážkový kľúč.');
-      return;
-    }
-    if (!currentUser) {
-      setIsSubmittingKey(false);
-      savePendingLicenseKey(parsed.cleanKey);
-      setLicenseKey(parsed.cleanKey);
-      setRequiresAuthNotice({
-        cleanKey: parsed.cleanKey,
-        tier: parsed.tier,
-        programLabel: parsed.programLabel || ACCESS_TIERS[parsed.tier]?.badgeLabel || 'Pro'
-      });
-      return;
-    }
-    const resolvedTier = parsed.tier;
-    const finishActivation = res => {
+      const resolvedTier = parsed.tier;
+      const res = await Promise.resolve(updateUserTier(resolvedTier, parsed.cleanKey));
       setIsSubmittingKey(false);
       if (!res || !res.ok) {
         if (res && res.requiresAuth) {
@@ -61420,18 +61912,6 @@ function PricingModalPanel({
           parsed
         });
       }
-    };
-    try {
-      const result = updateUserTier(resolvedTier, parsed.cleanKey);
-      if (result && typeof result.then === 'function') {
-        setIsSubmittingKey(true);
-        result.then(finishActivation, err => {
-          setIsSubmittingKey(false);
-          setKeyError(err?.message || 'Aktivácia licenčného kľúča zlyhala.');
-        });
-      } else {
-        finishActivation(result);
-      }
     } catch (err) {
       setIsSubmittingKey(false);
       setKeyError(err?.message || 'Nastala chyba pri overení licenčného kľúča.');
@@ -61448,7 +61928,7 @@ function PricingModalPanel({
       setKeyError('Zadajte prosím licenčný kľúč alebo univerzitný kupón (napr. KOMPAS-PRO-20261231-A1B2-XXXXXX, KOMPAS-EDU-2026 alebo EDU-UNIV-2026).');
       return;
     }
-    runVerifyAndActivateKey(cleanKey, true);
+    runVerifyAndActivateKey(cleanKey);
   };
   const handleRefreshPricingCloudDb = async () => {
     if (isRefreshingCloud) return;
@@ -61456,6 +61936,33 @@ function PricingModalPanel({
     setKeyError('');
     setDbImportStatus('');
     try {
+      if (isCloudAuthRuntime()) {
+        const res = await refreshSessionFromServer();
+        const latestStatus = res && res.status || getActiveLicenseStatus();
+        setActiveLicenseInfo(latestStatus);
+        const updatedUser = getCurrentUser();
+        if (res && res.unauthenticated) {
+          setKeySuccess(null);
+          setKeyError(res.error || 'Platnosť relácie vypršala. Prihláste sa prosím znova.');
+        } else if (latestStatus.isRevoked) {
+          setKeySuccess(null);
+          setKeyError(latestStatus.error || `Aktívny kľúč${latestStatus.revokedKey ? ` (${latestStatus.revokedKey})` : ''} bol zablokovaný alebo odstránený.`);
+        } else if (latestStatus.isExpired) {
+          setKeySuccess(null);
+          setKeyError(latestStatus.error || `Platnosť kľúča vypršala dňa ${latestStatus.expiredAtFormatted}.`);
+        } else if (res && res.ok) {
+          setDbImportStatus('☁️ Stav vášho účtu a licencie bol overený na serveri.');
+        } else {
+          setDbImportStatus('Lokálny stav licencie bol skontrolovaný.');
+        }
+        if (typeof onTierActivated === 'function') {
+          onTierActivated(latestStatus.tier, updatedUser, {
+            dbRefreshed: true,
+            status: latestStatus
+          });
+        }
+        return;
+      }
       const refRes = await refreshExternalLicenseDatabaseFromDisk();
       const latestStats = refRes && refRes.stats || getLicenseDatabaseStats();
       setDbStats(latestStats);
@@ -61468,8 +61975,6 @@ function PricingModalPanel({
       } else if (latestStatus.isExpired) {
         setKeySuccess(null);
         setKeyError(latestStatus.error || `Platnosť kľúča vypršala dňa ${latestStatus.expiredAtFormatted}.`);
-      } else if (latestStats.source === 'netlify-cloud') {
-        setDbImportStatus(`☁️ Netlify Cloud Databáza kľúčov bola obnovená (${latestStats.active} aktívnych${latestStats.revoked > 0 ? `, ${latestStats.revoked} zablokovaných` : ''}).`);
       } else {
         setDbImportStatus(`Databáza kľúčov bola obnovená (${latestStats.active} aktívnych${latestStats.revoked > 0 ? `, ${latestStats.revoked} zablokovaných` : ''}).`);
       }
@@ -61803,7 +62308,7 @@ function PricingModalPanel({
     className: "px-1.5 py-0.5 rounded bg-white/90 border border-indigo-200/80 font-mono text-[10px] text-slate-800"
   }, activeLicenseInfo.licenseKey)), /*#__PURE__*/React.createElement("span", {
     className: "text-[11px] font-bold"
-  }, activeLicenseInfo.isPermanent ? 'Trvalá licencia' : `Platnosť do ${activeLicenseInfo.formattedExpiry} • ${formatLicenseDaysRemainingSk(activeLicenseInfo.daysRemaining)}`)), /*#__PURE__*/React.createElement("div", {
+  }, activeLicenseInfo.isPermanent ? 'Trvalá licencia' : `Platnosť do ${activeLicenseInfo.formattedExpiry} • ${formatLicenseDaysRemainingSk(activeLicenseInfo.daysRemaining)}`)), isDevMode || !isCloudAuthRuntime() ? /*#__PURE__*/React.createElement("div", {
     className: `rounded-xl border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] ${dbStats.source === 'netlify-cloud' ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-white'}`
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-2 text-slate-700"
@@ -61840,7 +62345,20 @@ function PricingModalPanel({
     className: "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold transition-colors cursor-pointer"
   }, /*#__PURE__*/React.createElement(Upload, {
     className: "w-3 h-3"
-  }), /*#__PURE__*/React.createElement("span", null, "Načítať databázu (.js / .json)")))), dbImportStatus && /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("span", null, "Načítať databázu (.js / .json)")))) : currentUser ? /*#__PURE__*/React.createElement("div", {
+    className: "rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px]"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2 text-slate-700"
+  }, /*#__PURE__*/React.createElement(ShieldCheck, {
+    className: "w-3.5 h-3.5 shrink-0 text-emerald-600"
+  }), /*#__PURE__*/React.createElement("span", null, "Overenie vášho licenčného kľúča prebieha bezpečne na serveri.")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: handleRefreshPricingCloudDb,
+    disabled: isRefreshingCloud,
+    className: "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-colors cursor-pointer disabled:opacity-60"
+  }, /*#__PURE__*/React.createElement(RotateCcw, {
+    className: `w-3 h-3 ${isRefreshingCloud ? 'animate-spin' : ''}`
+  }), /*#__PURE__*/React.createElement("span", null, isRefreshingCloud ? 'Overujem...' : 'Overiť licenciu na serveri'))) : null, dbImportStatus && /*#__PURE__*/React.createElement("div", {
     className: "rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2 flex items-center gap-2 text-xs text-emerald-900 font-semibold"
   }, /*#__PURE__*/React.createElement(CheckCircle2, {
     className: "w-4 h-4 text-emerald-600 shrink-0"
@@ -74986,7 +75504,7 @@ function App() {
   const [accessTier, setAccessTier] = useState(() => {
     try {
       const urlLic = appReadUrlLicenseParam();
-      if (urlLic) {
+      if (urlLic && getCurrentUser()) {
         const parsedUrlLic = parseAndVerifyLicenseKey(urlLic);
         if (parsedUrlLic.valid && parsedUrlLic.tier) {
           return parsedUrlLic.tier;
@@ -75001,20 +75519,8 @@ function App() {
     } catch (e) {}
     const initialUser = getCurrentUser();
     if (initialUser && initialUser.tier) {
-      if (initialUser.licenseKey) {
-        const initialParsed = parseAndVerifyLicenseKey(initialUser.licenseKey);
-        if (!initialParsed.valid) {
-          return 'free';
-        }
-        return normalizeAccessTier(initialParsed.tier);
-      }
-      if (initialUser.tier === 'edu_pro' || initialUser.tier === 'enterprise_pro') {
-        return 'free';
-      }
-      if (initialUser.licenseExpiresAt && Number.isFinite(new Date(initialUser.licenseExpiresAt).getTime()) && Date.now() > new Date(initialUser.licenseExpiresAt).getTime()) {
-        return 'free';
-      }
-      return normalizeAccessTier(initialUser.tier);
+      const initialStatus = peekActiveLicenseStatus();
+      return normalizeAccessTier(initialStatus.tier || 'free');
     }
     return loadSavedAccessTier();
   });
@@ -75173,20 +75679,66 @@ function App() {
     }
   };
 
-  // Aktivácia licenčného kľúča z URL (?license=...), overenie v DB pri každom otvorení, refresh z disku na focus/visibility/pageshow + 60s a storage sync
+  // Aktivácia licenčného kľúča z URL (?license=...), overenie na serveri / v DB pri každom otvorení, refresh na focus/visibility/pageshow + 60s a storage sync
   useEffect(() => {
+    const syncAfterServerSession = serverRes => {
+      if (!serverRes) return;
+      if (serverRes.unauthenticated) {
+        setIsGodMode(false);
+        setDevTierOverride(null);
+        setAccessTier('lite');
+        setCurrentUser(null);
+        setLicenseStatus(serverRes.status || getActiveLicenseStatus());
+        if (typeof window !== 'undefined') {
+          window.__ACCESS_TIER__ = 'lite';
+        }
+        showToast(serverRes.error || 'Platnosť relácie vypršala. Prihláste sa prosím znova.', 'info');
+        return;
+      }
+      if (serverRes.ok && serverRes.status) {
+        const st = serverRes.status;
+        setLicenseStatus(st);
+        if (st.isExpired) {
+          const downgradedTier = normalizeAccessTier(st.tier || 'free');
+          setIsGodMode(false);
+          setDevTierOverride(null);
+          setAccessTier(downgradedTier);
+          setCurrentUser(getCurrentUser());
+          if (typeof window !== 'undefined') {
+            window.__ACCESS_TIER__ = downgradedTier;
+          }
+          const downgradedMeta = ACCESS_TIERS[downgradedTier] || ACCESS_TIERS.free;
+          showToast(st.error || `Platnosť licenčného kľúča vypršala. Prístup bol prepnutý na balík ${downgradedMeta.badgeLabel}.`, 'error');
+          return;
+        }
+        if (st.isRevoked) {
+          const downgradedTier = normalizeAccessTier(st.tier || 'free');
+          setIsGodMode(false);
+          setDevTierOverride(null);
+          setAccessTier(downgradedTier);
+          setCurrentUser(getCurrentUser());
+          if (typeof window !== 'undefined') {
+            window.__ACCESS_TIER__ = downgradedTier;
+          }
+          const downgradedMeta = ACCESS_TIERS[downgradedTier] || ACCESS_TIERS.free;
+          showToast(st.error || `Licenčný kľúč bol zablokovaný alebo odstránený. Prístup bol prepnutý na balík ${downgradedMeta.badgeLabel}.`, 'error');
+          return;
+        }
+        if (checkActiveLicenseRef.current) {
+          checkActiveLicenseRef.current({
+            reason: 'server_refresh'
+          });
+        }
+      }
+    };
     if (!urlLicenseProcessedRef.current) {
       urlLicenseProcessedRef.current = true;
       const urlLicense = appReadUrlLicenseParam();
       if (urlLicense) {
-        const applyUrlLicense = (isPostRefresh = false) => {
-          const parsed = parseAndVerifyLicenseKey(urlLicense);
-          if (!parsed.valid) {
-            if (!isPostRefresh && parsed.dbStatus === 'not_found') {
-              refreshExternalLicenseDatabaseFromDisk().then(() => applyUrlLicense(true));
-              return;
-            }
-            showToast(parsed.error || 'Licenčný kľúč v URL odkaze nie je platný.', 'error');
+        const applyUrlLicense = async () => {
+          const parsed = await verifyLicenseKeyOnline(urlLicense);
+          if (!parsed || !parsed.valid) {
+            showToast(parsed && parsed.error || 'Licenčný kľúč v URL odkaze nie je platný.', 'error');
             return;
           }
           if (!getCurrentUser()) {
@@ -75204,7 +75756,7 @@ function App() {
             showToast(`Licenčný kľúč ${parsed.cleanKey} (${parsed.programLabel}) je pripravený! Pre prechod na Pro sa najprv bezplatne zaregistrujte alebo prihláste.`, 'info');
             return;
           }
-          const res = updateUserTier(parsed.tier, parsed.cleanKey);
+          const res = await Promise.resolve(updateUserTier(parsed.tier, parsed.cleanKey));
           if (res && res.ok) {
             const activatedTier = normalizeAccessTier(res.tier);
             setIsGodMode(false);
@@ -75219,15 +75771,6 @@ function App() {
             setLicenseStatus(getActiveLicenseStatus());
             const validityNote = parsed.isPermanent ? 'Trvalá licencia' : `platnosť do ${parsed.formattedExpiry}`;
             showToast(`✓ Licenčný kľúč ${parsed.cleanKey} (${parsed.programLabel}) bol aktivovaný (${validityNote}).`, 'success');
-            if (!isPostRefresh) {
-              refreshExternalLicenseDatabaseFromDisk().then(() => {
-                if (checkActiveLicenseRef.current) {
-                  checkActiveLicenseRef.current({
-                    reason: 'disk_refresh'
-                  });
-                }
-              });
-            }
           } else {
             if (res && res.requiresAuth) {
               savePendingLicenseKey(parsed.cleanKey);
@@ -75239,7 +75782,7 @@ function App() {
             showToast(res?.error || 'Licenčný kľúč sa nepodarilo aktivovať.', 'error');
           }
         };
-        applyUrlLicense(false);
+        applyUrlLicense();
         try {
           if (typeof window !== 'undefined' && window.location && window.location.protocol !== 'file:' && window.history && window.history.replaceState) {
             const cleanUrl = new URL(window.location.href);
@@ -75257,13 +75800,17 @@ function App() {
             reason: 'startup'
           });
         }
-        Promise.all([refreshExternalLicenseDatabaseFromDisk(), refreshExternalUsersDatabaseFromDisk()]).then(() => {
-          if (checkActiveLicenseRef.current) {
-            checkActiveLicenseRef.current({
-              reason: 'disk_refresh'
-            });
-          }
-        });
+        if (isCloudAuthRuntime()) {
+          refreshSessionFromServer().then(syncAfterServerSession);
+        } else {
+          Promise.all([refreshExternalLicenseDatabaseFromDisk(), refreshExternalUsersDatabaseFromDisk()]).then(() => {
+            if (checkActiveLicenseRef.current) {
+              checkActiveLicenseRef.current({
+                reason: 'disk_refresh'
+              });
+            }
+          });
+        }
       }
     }
     const triggerEventDiskRefresh = reason => {
@@ -75272,6 +75819,10 @@ function App() {
         return;
       }
       lastEventRefreshAtRef.current = nowMs;
+      if (isCloudAuthRuntime()) {
+        refreshSessionFromServer().then(syncAfterServerSession);
+        return;
+      }
       Promise.all([refreshExternalLicenseDatabaseFromDisk(), refreshExternalUsersDatabaseFromDisk()]).then(() => {
         if (checkActiveLicenseRef.current) {
           checkActiveLicenseRef.current({
@@ -75281,6 +75832,10 @@ function App() {
       });
     };
     const licenseInterval = setInterval(() => {
+      if (isCloudAuthRuntime()) {
+        refreshSessionFromServer().then(syncAfterServerSession);
+        return;
+      }
       Promise.all([refreshExternalLicenseDatabaseFromDisk(), refreshExternalUsersDatabaseFromDisk()]).then(() => {
         if (checkActiveLicenseRef.current) {
           checkActiveLicenseRef.current({
@@ -75543,8 +76098,8 @@ function App() {
       showToast(`✓ Aktívny balík prístupu: ${tierMeta.name}`, 'success');
     }
   };
-  const handleActivateAccessTier = (nextTier, customLicenseKey = '') => {
-    const tierRes = updateUserTier(nextTier, customLicenseKey);
+  const handleActivateAccessTier = async (nextTier, customLicenseKey = '') => {
+    const tierRes = await Promise.resolve(updateUserTier(nextTier, customLicenseKey));
     const normalized = tierRes?.tier || saveAccessTier(nextTier);
     handlePricingTierActivated(normalized, tierRes?.user || null);
   };
@@ -76216,6 +76771,7 @@ function App() {
     }
   }), /*#__PURE__*/React.createElement(PricingModal, {
     isOpen: isPricingModalOpen && (Boolean(currentUser) || isDevMode),
+    isDevMode: isDevMode,
     onClose: () => {
       setIsPricingModalOpen(false);
       setPendingUpgradeInfo(null);
@@ -76242,6 +76798,7 @@ function App() {
   }), /*#__PURE__*/React.createElement(AuthModal, {
     isOpen: authModalState.isOpen,
     initialTab: authModalState.tab,
+    isDevMode: isDevMode,
     currentUser: currentUser,
     accessTier: effectiveAccessTier,
     activeProjectName: activeProject?.name,
